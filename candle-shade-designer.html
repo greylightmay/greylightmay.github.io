@@ -279,7 +279,7 @@
 
             if (motifType !== 'none' && motifData[motifType]) {
               const motif = motifData[motifType];
-              const scale = cutoutSize / Math.max(motif.viewBox.width, motif.viewBox.height);
+              const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
               
               svgContent += '    <g id="motifs">\n';
               cutouts.forEach((cutout) => {
@@ -311,7 +311,8 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'candle-shade-' + dimensions.width + 'x' + dimensions.height + 'in.svg';
+            const motifName = motifType === 'none' ? 'blank' : motifType;
+            link.download = 'candle-shade-' + dimensions.width + 'x' + dimensions.height + 'in-' + motifName + '.svg';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -568,7 +569,7 @@
                               ));
                             } else if (motifData[motifType]) {
                               const motif = motifData[motifType];
-                              const scale = cutoutSize / Math.max(motif.viewBox.width, motif.viewBox.height);
+                              const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
                               
                               return cutouts.map((cutout, idx) => {
                                 const scaledWidth = motif.viewBox.width * scale;
