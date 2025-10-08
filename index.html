@@ -49,6 +49,45 @@
             overflow: hidden;
         }
 
+        .carousel-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .carousel-image.active {
+            opacity: 1;
+        }
+
+        .carousel-dots {
+            position: absolute;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 0.5rem;
+            z-index: 10;
+        }
+
+        .carousel-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .carousel-dot.active {
+            background: rgba(255, 255, 255, 1);
+            transform: scale(1.2);
+        }
+
         .image-overlay {
             position: absolute;
             top: 0;
@@ -278,6 +317,58 @@
             <p style="font-size: 0.875rem; margin-bottom: 1rem;">Built with ❤️ for the laser cutting community</p>
         </footer>
     </div>
+
+    <script>
+        // Hero Image Carousel
+        const images = document.querySelectorAll('.carousel-image');
+        const dots = document.querySelectorAll('.carousel-dot');
+        let currentIndex = 0;
+        const intervalTime = 4000; // 4 seconds per image
+
+        // Only run carousel if we have images and dots
+        if (images.length > 0 && dots.length > 0) {
+            function showImage(index) {
+                // Safety check
+                if (index < 0 || index >= images.length) return;
+                
+                // Remove active class from all images and dots
+                images.forEach(img => {
+                    if (img) img.classList.remove('active');
+                });
+                dots.forEach(dot => {
+                    if (dot) dot.classList.remove('active');
+                });
+                
+                // Add active class to current image and dot
+                if (images[index]) images[index].classList.add('active');
+                if (dots[index]) dots[index].classList.add('active');
+            }
+
+            function nextImage() {
+                currentIndex = (currentIndex + 1) % images.length;
+                showImage(currentIndex);
+            }
+
+            // Auto-advance carousel
+            let carouselInterval = setInterval(nextImage, intervalTime);
+
+            // Click on dots to navigate
+            dots.forEach(dot => {
+                if (dot) {
+                    dot.addEventListener('click', () => {
+                        const index = parseInt(dot.dataset.index);
+                        if (!isNaN(index)) {
+                            currentIndex = index;
+                            showImage(currentIndex);
+                            // Reset the interval when user manually navigates
+                            clearInterval(carouselInterval);
+                            carouselInterval = setInterval(nextImage, intervalTime);
+                        }
+                    });
+                }
+            });
+        }
+    </script>
 
 </body>
 </html>
