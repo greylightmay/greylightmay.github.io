@@ -30,6 +30,22 @@
           const [zoomLevel, setZoomLevel] = useState(2);
           const [lengthInput, setLengthInput] = useState('100');
           const [widthInput, setWidthInput] = useState('50');
+
+          const resetToDefaults = () => {
+            setDimensions({ length: 100, width: 50 });
+            setLaserType('diode');
+            setUnits('mm');
+            setAdvancedSettings({
+              bridgeWidth: 2.5,
+              rowSpacing: 1.5,
+              cutLength: 25.4,
+              kerfWidth: 0.1,
+              edgeOverhang: 1.0
+            });
+            setLengthInput('100');
+            setWidthInput('50');
+            setZoomLevel(2);
+          };
           
           const convertToMm = (value) => units === 'inches' ? value * 25.4 : value;
           const convertFromMm = (value) => units === 'inches' ? value / 25.4 : value;
@@ -187,9 +203,16 @@
                   </div>
                   
                   <div className="bg-gray-50 p-6 rounded-lg">
-                    <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                      Advanced Settings <span className="ml-2">{showAdvanced ? '▼' : '▶'}</span>
-                    </button>
+                    <div className="flex justify-between items-center mb-4">
+                      <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-lg font-semibold text-gray-700 flex items-center">
+                        Advanced Settings <span className="ml-2">{showAdvanced ? '▼' : '▶'}</span>
+                      </button>
+                      <button 
+                        onClick={resetToDefaults}
+                        className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition-colors">
+                        Reset to Defaults
+                      </button>
+                    </div>
                     
                     {showAdvanced && (
                       <div className="space-y-4">
