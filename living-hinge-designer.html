@@ -30,6 +30,11 @@
           const [zoomLevel, setZoomLevel] = useState(2);
           const [lengthInput, setLengthInput] = useState('100');
           const [widthInput, setWidthInput] = useState('50');
+          const [bridgeWidthInput, setBridgeWidthInput] = useState('2.5');
+          const [rowSpacingInput, setRowSpacingInput] = useState('1.5');
+          const [cutLengthInput, setCutLengthInput] = useState('25.4');
+          const [kerfWidthInput, setKerfWidthInput] = useState('0.1');
+          const [edgeOverhangInput, setEdgeOverhangInput] = useState('1.0');
 
           const resetToDefaults = () => {
             setDimensions({ length: 100, width: 50 });
@@ -44,6 +49,11 @@
             });
             setLengthInput('100');
             setWidthInput('50');
+            setBridgeWidthInput('2.5');
+            setRowSpacingInput('1.5');
+            setCutLengthInput('25.4');
+            setKerfWidthInput('0.1');
+            setEdgeOverhangInput('1.0');
             setZoomLevel(2);
           };
           
@@ -56,11 +66,18 @@
             const defaultKerf = laserType === 'co2' ? 0.3 : 0.1;
             const defaultRowSpacing = laserType === 'co2' ? 1.8 : 1.5;
             setAdvancedSettings(prev => ({ ...prev, kerfWidth: defaultKerf, rowSpacing: defaultRowSpacing }));
+            setKerfWidthInput(defaultKerf.toString());
+            setRowSpacingInput(defaultRowSpacing.toString());
           }, [laserType]);
           
           useEffect(() => {
             setLengthInput(formatUnit(convertFromMm(dimensions.length)));
             setWidthInput(formatUnit(convertFromMm(dimensions.width)));
+            setBridgeWidthInput(formatUnit(convertFromMm(advancedSettings.bridgeWidth)));
+            setRowSpacingInput(formatUnit(convertFromMm(advancedSettings.rowSpacing)));
+            setCutLengthInput(formatUnit(convertFromMm(advancedSettings.cutLength)));
+            setKerfWidthInput(formatUnit(convertFromMm(advancedSettings.kerfWidth)));
+            setEdgeOverhangInput(formatUnit(convertFromMm(advancedSettings.edgeOverhang)));
           }, [units]);
           
           const generateSVG = useCallback(() => {
@@ -145,6 +162,91 @@
               setWidthInput(convertFromMm(dimensions.width).toString());
             }
           };
+
+          const handleBridgeWidthChange = (e) => {
+            setBridgeWidthInput(e.target.value);
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value) && value > 0) {
+              setAdvancedSettings(prev => ({ ...prev, bridgeWidth: convertToMm(value) }));
+            }
+          };
+
+          const handleBridgeWidthBlur = () => {
+            const value = parseFloat(bridgeWidthInput);
+            if (!isNaN(value) && value > 0) {
+              setBridgeWidthInput(value.toString());
+            } else {
+              setBridgeWidthInput(formatUnit(convertFromMm(advancedSettings.bridgeWidth)));
+            }
+          };
+
+          const handleRowSpacingChange = (e) => {
+            setRowSpacingInput(e.target.value);
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value) && value > 0) {
+              setAdvancedSettings(prev => ({ ...prev, rowSpacing: convertToMm(value) }));
+            }
+          };
+
+          const handleRowSpacingBlur = () => {
+            const value = parseFloat(rowSpacingInput);
+            if (!isNaN(value) && value > 0) {
+              setRowSpacingInput(value.toString());
+            } else {
+              setRowSpacingInput(formatUnit(convertFromMm(advancedSettings.rowSpacing)));
+            }
+          };
+
+          const handleCutLengthChange = (e) => {
+            setCutLengthInput(e.target.value);
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value) && value > 0) {
+              setAdvancedSettings(prev => ({ ...prev, cutLength: convertToMm(value) }));
+            }
+          };
+
+          const handleCutLengthBlur = () => {
+            const value = parseFloat(cutLengthInput);
+            if (!isNaN(value) && value > 0) {
+              setCutLengthInput(value.toString());
+            } else {
+              setCutLengthInput(formatUnit(convertFromMm(advancedSettings.cutLength)));
+            }
+          };
+
+          const handleKerfWidthChange = (e) => {
+            setKerfWidthInput(e.target.value);
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value) && value > 0) {
+              setAdvancedSettings(prev => ({ ...prev, kerfWidth: convertToMm(value) }));
+            }
+          };
+
+          const handleKerfWidthBlur = () => {
+            const value = parseFloat(kerfWidthInput);
+            if (!isNaN(value) && value > 0) {
+              setKerfWidthInput(value.toString());
+            } else {
+              setKerfWidthInput(formatUnit(convertFromMm(advancedSettings.kerfWidth)));
+            }
+          };
+
+          const handleEdgeOverhangChange = (e) => {
+            setEdgeOverhangInput(e.target.value);
+            const value = parseFloat(e.target.value);
+            if (!isNaN(value) && value >= 0) {
+              setAdvancedSettings(prev => ({ ...prev, edgeOverhang: convertToMm(value) }));
+            }
+          };
+
+          const handleEdgeOverhangBlur = () => {
+            const value = parseFloat(edgeOverhangInput);
+            if (!isNaN(value) && value >= 0) {
+              setEdgeOverhangInput(value.toString());
+            } else {
+              setEdgeOverhangInput(formatUnit(convertFromMm(advancedSettings.edgeOverhang)));
+            }
+          };
           
           const { bridgeWidth, rowSpacing, cutLength } = advancedSettings;
           const numRows = Math.floor(dimensions.length / rowSpacing);
@@ -218,40 +320,45 @@
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-600 mb-1">Bridge Width ({units})</label>
-                          <input type="number" value={formatUnit(convertFromMm(advancedSettings.bridgeWidth))}
-                            onChange={(e) => setAdvancedSettings(prev => ({ ...prev, bridgeWidth: convertToMm(parseFloat(e.target.value) || 0) }))}
+                          <input type="number" value={bridgeWidthInput}
+                            onChange={handleBridgeWidthChange}
+                            onBlur={handleBridgeWidthBlur}
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                             min={units === 'inches' ? 0.001 : 0.1} step={getStepSize()} />
                         </div>
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-600 mb-1">Row Spacing ({units})</label>
-                          <input type="number" value={formatUnit(convertFromMm(advancedSettings.rowSpacing))}
-                            onChange={(e) => setAdvancedSettings(prev => ({ ...prev, rowSpacing: convertToMm(parseFloat(e.target.value) || 0) }))}
+                          <input type="number" value={rowSpacingInput}
+                            onChange={handleRowSpacingChange}
+                            onBlur={handleRowSpacingBlur}
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                             min={units === 'inches' ? 0.01 : 0.5} step={getStepSize()} />
                         </div>
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-600 mb-1">Cut Length ({units})</label>
-                          <input type="number" value={formatUnit(convertFromMm(advancedSettings.cutLength))}
-                            onChange={(e) => setAdvancedSettings(prev => ({ ...prev, cutLength: convertToMm(parseFloat(e.target.value) || 0) }))}
+                          <input type="number" value={cutLengthInput}
+                            onChange={handleCutLengthChange}
+                            onBlur={handleCutLengthBlur}
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                             min={units === 'inches' ? 0.01 : 1} step={getStepSize()} />
                         </div>
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-600 mb-1">Kerf Width ({units})</label>
-                          <input type="number" value={formatUnit(convertFromMm(advancedSettings.kerfWidth))}
-                            onChange={(e) => setAdvancedSettings(prev => ({ ...prev, kerfWidth: convertToMm(parseFloat(e.target.value) || 0) }))}
+                          <input type="number" value={kerfWidthInput}
+                            onChange={handleKerfWidthChange}
+                            onBlur={handleKerfWidthBlur}
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                             min={units === 'inches' ? 0.001 : 0.05} step={units === 'inches' ? 0.001 : 0.05} />
                         </div>
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-600 mb-1">Edge Overhang ({units})</label>
-                          <input type="number" value={formatUnit(convertFromMm(advancedSettings.edgeOverhang))}
-                            onChange={(e) => setAdvancedSettings(prev => ({ ...prev, edgeOverhang: convertToMm(parseFloat(e.target.value) || 0) }))}
+                          <input type="number" value={edgeOverhangInput}
+                            onChange={handleEdgeOverhangChange}
+                            onBlur={handleEdgeOverhangBlur}
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                             min="0" step={getStepSize()} />
                           <p className="text-xs text-gray-500 mt-1">How far cuts extend beyond edges (ensures complete cut-through)</p>
