@@ -122,6 +122,10 @@
       }, [dimensions, advancedSettings]);
 
       const downloadSVG = () => {
+        // Track the download event
+        gtag('event', 'download_svg', {
+          'tool_name': 'living_hinge_designer'
+        });
         const svgContent = generateSVG();
         const blob = new Blob([svgContent], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);

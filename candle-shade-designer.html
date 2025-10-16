@@ -212,6 +212,10 @@
       }, [dimensions, solidMargin, fastenerWidth, calculateCutoutPositions, generateHingePattern, splitLineAroundCutouts, hingeDefaults, motifType, motifData, cutoutSize]);
 
       const downloadSVG = () => {
+        // Track the download event
+        gtag('event', 'download_svg', {
+          'tool_name': 'candle_shade_designer'
+        });
         const svgContent = generateSVG();
         const blob = new Blob([svgContent], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
