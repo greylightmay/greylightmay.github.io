@@ -1,374 +1,380 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Candle Shade Designer</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
+  <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
+  <title>Candle Shade Designer</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
+
 <body>
-    <div id="root"></div>
+  <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useCallback, useEffect } = React;
+  <script type="text/babel">
+    const { useState, useCallback, useEffect } = React;
 
-        const CandleShadeDesigner = () => {
-          const [dimensions, setDimensions] = useState({ width: 10.5, height: 5 });
-          const [units, setUnits] = useState('inches');
-          const [laserType, setLaserType] = useState('diode');
-          const [motifType, setMotifType] = useState('none');
-          const [zoomLevel, setZoomLevel] = useState(1);
-          const [widthInput, setWidthInput] = useState('10.5');
-          const [heightInput, setHeightInput] = useState('5');
-          
-          const cutoutSize = 0.75;
-          const edgeMargin = 0.5;
-          const solidMargin = 0.25;
-          const fastenerWidth = 0.5;
-          const minHeight = (2 * edgeMargin) + cutoutSize;
-          
-          const getAdaptiveGrid = useCallback(() => {
-            const { height } = dimensions;
-            const columns = 3;
-            const availableHeight = height - (2 * edgeMargin);
-            const minSpacingBetweenRows = 0.25;
-            
-            let rows = 3;
-            let totalCutoutHeight = rows * cutoutSize;
-            let requiredSpacing = (rows - 1) * minSpacingBetweenRows;
-            let totalRequired = totalCutoutHeight + requiredSpacing;
-            
-            if (totalRequired > availableHeight) {
-              rows = 2;
-              totalCutoutHeight = rows * cutoutSize;
-              requiredSpacing = (rows - 1) * minSpacingBetweenRows;
-              totalRequired = totalCutoutHeight + requiredSpacing;
-              if (totalRequired > availableHeight) rows = 1;
+    const CandleShadeDesigner = () => {
+      const [dimensions, setDimensions] = useState({ width: 10.5, height: 5 });
+      const [units, setUnits] = useState('inches');
+      const [laserType, setLaserType] = useState('diode');
+      const [motifType, setMotifType] = useState('none');
+      const [zoomLevel, setZoomLevel] = useState(1);
+      const [widthInput, setWidthInput] = useState('10.5');
+      const [heightInput, setHeightInput] = useState('5');
+
+      const cutoutSize = 0.75;
+      const edgeMargin = 0.5;
+      const solidMargin = 0.25;
+      const fastenerWidth = 0.5;
+      const minHeight = (2 * edgeMargin) + cutoutSize;
+
+      const getAdaptiveGrid = useCallback(() => {
+        const { height } = dimensions;
+        const columns = 3;
+        const availableHeight = height - (2 * edgeMargin);
+        const minSpacingBetweenRows = 0.25;
+
+        let rows = 3;
+        let totalCutoutHeight = rows * cutoutSize;
+        let requiredSpacing = (rows - 1) * minSpacingBetweenRows;
+        let totalRequired = totalCutoutHeight + requiredSpacing;
+
+        if (totalRequired > availableHeight) {
+          rows = 2;
+          totalCutoutHeight = rows * cutoutSize;
+          requiredSpacing = (rows - 1) * minSpacingBetweenRows;
+          totalRequired = totalCutoutHeight + requiredSpacing;
+          if (totalRequired > availableHeight) rows = 1;
+        }
+        return { columns, rows };
+      }, [dimensions]);
+
+      const gridConfig = getAdaptiveGrid();
+
+      const getHingeDefaults = () => {
+        if (laserType === 'diode') {
+          return { bridgeWidth: 0.0984, rowSpacing: 0.0591, cutLength: 1.0, kerfWidth: 0.0039 };
+        } else {
+          return { bridgeWidth: 0.0984, rowSpacing: 0.0709, cutLength: 1.0, kerfWidth: 0.0118 };
+        }
+      };
+
+      const hingeDefaults = getHingeDefaults();
+
+      const motifData = {
+        bat: { path: "M1.24,27.33c2.18-2.1,4.58-3.54,7.62-3.99,4.12-.62,9.98.54,13.63,2.57.39.22,2.81,2,3.03,1.78.12-1.39-.77-1.68-1.37-2.56-.4-.59-.61-1.34-.9-1.98.39-.29,2.16.86,2.53,1.19.8-.89,1.83-1.48,3.06-1.37-.04-.89.23-1.91.79-2.62.15.65.63,1.22.74,1.87.25,1.42.01,1.44.87,2.79.11.17-.02.31.39.22.56-2.22.8-4.28,1.72-6.4,2.51-5.81,7.85-11.85,14.7-11.5-3.84,3.32-5.79,8.64-5.08,13.69-3.93,1.59-5.63,6.33-3.82,10.15-3.35.65-5.21,4.18-5.42,7.34-2.45-2.16-6.16-2.98-9.08-1.22-1.55-4.04-6.14-5.82-10.11-4.21-1.57-2.25-4.26-4.04-6.87-4.92-.67-.22-2.6-.83-3.19-.83H1.24Z", viewBox: { width: 49.3, height: 46.37 } },
+        gingerbread: { path: "M24.34.67c7.04-.41,11.21,7.84,6.81,13.43-.22.28-1.12,1.12-1.2,1.3-.25.54.31.76.76.58,1.99-.86,4.03-2.14,6.02-2.93,5.06-2,8.23,4.72,3.73,7.4-2.24,1.33-5.19,2.19-7.38,3.53-1.03.63-1.06,1.35-1.03,2.47.06,2.4.37,3.08,1.58,5.04,1.03,1.67,2.18,3.26,3.22,4.92.36.44,1.03.15,1.6.19,2.21.12,3.89,1.67,3.62,3.98-.2,1.7-3.83,3.8-5.31,4.44-2.74,1.2-3.99.67-5.73-1.54-1.59-2.02-3.06-4.58-4.71-6.48-.82-.94-1.99-1.16-2.95-.27-1.96,2.3-3.55,5.29-5.54,7.52-2.31,2.58-5.1.99-7.5-.54-1.83-1.17-3.68-2.45-2.68-4.9.77-1.89,2.76-2.49,4.64-2.06,1.27-2.06,2.83-3.97,4.06-6.05.87-1.48.81-1.77.95-3.44.11-1.33.49-2.4-.87-3.25-2.1-1.31-5.05-2.21-7.28-3.46-4.82-2.69-1.45-9.69,3.82-7.4,1.97.86,3.86,1.99,5.84,2.84l.59-.04c.57-.45-.75-1.41-1.03-1.76-4.38-5.24-.78-13.13,5.97-13.52Z", viewBox: { width: 49.3, height: 46.99 } },
+        pumpkin: { path: "M26.03,8.03c.73.15,1.31.63,1.92,1.02,2.63-1.46,5.32-.75,7.24,1.45,8.8.11,10.48,12.42,9.63,19.07-.64,4.99-2.72,13.91-8.93,14.33-.24.02-.48-.15-.7-.09-.1.03-1.15.87-1.45,1.04-1.62.87-3.51,1.12-5.26.47-.51-.19-.94-.54-1.46-.7-2.31,1.31-5.01,1.45-7.14-.29-1.9,1.68-4.24,1.7-6.39.48-.42-.24-1.13-.94-1.42-1.06-.3-.13-1.03-.18-1.45-.31-4.81-1.52-6.88-6.89-7.53-11.49-.81-5.81.58-19.61,7.63-21.37.42-.11.92-.09,1.27-.18.23-.06.79-.58,1.11-.75,2.06-1.12,4.25-1.44,6.34-.17l2.02-1.24c.08-1.61-.23-3.22-.61-4.78-.09-.38-.67-1.97-.6-2.16.02-.06.05-.08.09-.12.16-.14,2.28-.44,2.64-.46.68-.05,3.68-.06,4.03.51.2.33-.32,1.4-.42,1.86-.13.57-.72,4.76-.55,4.95Z", viewBox: { width: 47.94, height: 46.37 } },
+        star5: { path: "M46.47 18.15 32.9 28.56 38.29 45.03 24.16 34.5 9.85 45.03 15.07 28.59 1.47 18.15 18.61 18.15 23.97 1.59 29.62 18.15 46.47 18.15", viewBox: { width: 47.94, height: 46.37 } },
+        star6: { path: "M44.11 12.2 37.71 23.5 44.11 34.78 31.22 34.78 24.73 45.99 18.16 34.78 5.19 34.78 5.28 34.31 11.55 23.49 5.19 12.2 18.16 12.2 24.73 .99 31.22 12.2 44.11 12.2", viewBox: { width: 49.3, height: 46.99 } },
+        tree: { path: "M16.85,12.01c-.22-.03-2.2-.79-2.03-1.04,3.06-1.63,5.89-3.83,7.82-6.74.65-.99,1.09-2.07,1.67-3.09.07-.13-.01-.2.26-.15,1.57,4.76,5.57,7.95,9.86,10.21.2.27-1.16.81-1.39.87-.79.22-1.63.29-2.44.17-.41.41,1.44,1.88,1.77,2.11,1.77,1.24,4.05,2.08,6.23,1.95-.57,1.37-1.5,2.96-2.8,3.76-.32.2-.6.25-.89.39-.08.04-.22,0-.15.2.18.43,2.57,1.68,3.1,1.89,1.27.49,2.62.69,3.98.72-.81,1.57-2.14,2.9-3.79,3.58-.38.16-1.19.16-.95.58.12.2,1.48.68,1.79.82.11.05.2-.07.16.18-.33.37-.72.68-1.12.97-.26.19-1.47.81-1.43,1.01s1.82,1.29,2.13,1.47c2.3,1.34,4.81,2.2,7.5,2.19-1.29,2.73-3.34,4.79-6.31,5.58l-1.46.39c.7.65,1.74.89,2.67.99-2.61,2.25-6.7,3.87-9.91,1.86l-1.62,3.09c-2.03-.31-3.91-1.15-5.12-2.86-.14-.03-.91.95-1.15,1.15-.73.62-1.69,1.08-2.61,1.34-1.54.44-1.61.56-2.34-.91-.42-.84-.6-1.77-.97-2.63-2.31,2.08-5.71,1.56-8.38.48l-1.78-.95,1.68-.93c.23-.35-.58-.4-.64-.7l1.27-.76c0-.12-1.81-.57-2.09-.7-1.92-.86-3.26-2.83-4.52-4.41-.03-.25.03-.14.18-.17,2.93-.56,4.57-.56,7.33-2.07.33-.18,2.06-1.22,2.19-1.41.27-.4-.45-.55-.75-.77-.33-.25-.72-.5-.94-.86.59-.12,1.21-.47,1.74-.76.13-.07.28,0,.23-.23-.54-.33-1.13-.42-1.7-.74-1.53-.84-3.03-2.68-3.64-4.31,1.92.37,3.96.15,5.73-.71.24-.11,2.12-1.19,1.81-1.49-2.13-.28-3.6-2.42-4.29-4.29,2.42-.39,6.4-1.32,7.68-3.63.11-.21.24-.41.21-.66-.57-.05-1.25.07-1.8,0Z", viewBox: { width: 49.3, height: 46.99 } }
+      };
+
+      const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
+      const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
+      const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+
+      useEffect(() => {
+        setWidthInput(formatUnit(convertFromInches(dimensions.width)));
+        setHeightInput(formatUnit(convertFromInches(dimensions.height)));
+      }, [units]);
+
+      const generateHingePattern = useCallback((width, height, startX, endX) => {
+        const { bridgeWidth, rowSpacing, cutLength } = hingeDefaults;
+        const activeWidth = endX - startX;
+        const numColumns = Math.floor(activeWidth / rowSpacing);
+        const lines = [];
+        const cutPlusBridge = cutLength + bridgeWidth;
+        const numCompleteUnits = Math.floor(height / cutPlusBridge);
+        const totalCompleteHeight = numCompleteUnits * cutPlusBridge;
+        const centerOffset = (height - totalCompleteHeight) / 2;
+
+        for (let col = 0; col < numColumns; col++) {
+          const x = startX + col * rowSpacing;
+          const isEvenCol = col % 2 === 0;
+          const brickOffset = isEvenCol ? 0 : cutPlusBridge / 2;
+          const startYPos = centerOffset + brickOffset;
+
+          for (let y = startYPos - cutPlusBridge; y < height + cutPlusBridge; y += cutPlusBridge) {
+            let y1 = Math.max(y, 0);
+            let y2 = Math.min(y + cutLength, height);
+            if (y2 > 0 && y1 < height && y2 - y1 > 0.01) {
+              lines.push({ x, y1, x2: x, y2 });
             }
-            return { columns, rows };
-          }, [dimensions]);
-          
-          const gridConfig = getAdaptiveGrid();
-          
-          const getHingeDefaults = () => {
-            if (laserType === 'diode') {
-              return { bridgeWidth: 0.0984, rowSpacing: 0.0591, cutLength: 1.0, kerfWidth: 0.0039 };
-            } else {
-              return { bridgeWidth: 0.0984, rowSpacing: 0.0709, cutLength: 1.0, kerfWidth: 0.0118 };
+          }
+        }
+        return lines;
+      }, [hingeDefaults]);
+
+      const calculateCutoutPositions = useCallback(() => {
+        const { width, height } = dimensions;
+        const { columns, rows } = gridConfig;
+        const availableWidth = width - (2 * edgeMargin);
+        const availableHeight = height - (2 * edgeMargin);
+        const totalCutoutWidth = columns * cutoutSize;
+        const spacingX = (availableWidth - totalCutoutWidth) / (columns + 1);
+        const totalCutoutHeight = rows * cutoutSize;
+        const maxVerticalSpacing = rows === 1 ? 0 : (availableHeight - totalCutoutHeight) / (rows - 1);
+
+        const cutouts = [];
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < columns; col++) {
+            const x = edgeMargin + spacingX * (col + 1) + cutoutSize * col;
+            const y = rows === 1 ? edgeMargin + (availableHeight - cutoutSize) / 2 : edgeMargin + (row * (cutoutSize + maxVerticalSpacing));
+            cutouts.push({ x, y, width: cutoutSize, height: cutoutSize });
+          }
+        }
+        return cutouts;
+      }, [dimensions, gridConfig]);
+
+      const splitLineAroundCutouts = (line, cutouts) => {
+        const lineX = line.x;
+        const lineY1 = line.y1;
+        const lineY2 = line.y2;
+        const intersectingCutouts = cutouts.filter(cutout => lineX >= cutout.x && lineX <= (cutout.x + cutout.width)).sort((a, b) => a.y - b.y);
+        if (intersectingCutouts.length === 0) return [line];
+
+        const segments = [];
+        let currentY = lineY1;
+        for (const cutout of intersectingCutouts) {
+          const cutoutTop = cutout.y;
+          const cutoutBottom = cutout.y + cutout.height;
+          if (currentY < cutoutTop) {
+            const segmentLength = Math.min(cutoutTop, lineY2) - currentY;
+            if (segmentLength > 0.001) {
+              segments.push({ x: lineX, y1: currentY, x2: lineX, y2: Math.min(cutoutTop, lineY2) });
             }
-          };
-          
-          const hingeDefaults = getHingeDefaults();
-          
-          const motifData = {
-            bat: { path: "M1.24,27.33c2.18-2.1,4.58-3.54,7.62-3.99,4.12-.62,9.98.54,13.63,2.57.39.22,2.81,2,3.03,1.78.12-1.39-.77-1.68-1.37-2.56-.4-.59-.61-1.34-.9-1.98.39-.29,2.16.86,2.53,1.19.8-.89,1.83-1.48,3.06-1.37-.04-.89.23-1.91.79-2.62.15.65.63,1.22.74,1.87.25,1.42.01,1.44.87,2.79.11.17-.02.31.39.22.56-2.22.8-4.28,1.72-6.4,2.51-5.81,7.85-11.85,14.7-11.5-3.84,3.32-5.79,8.64-5.08,13.69-3.93,1.59-5.63,6.33-3.82,10.15-3.35.65-5.21,4.18-5.42,7.34-2.45-2.16-6.16-2.98-9.08-1.22-1.55-4.04-6.14-5.82-10.11-4.21-1.57-2.25-4.26-4.04-6.87-4.92-.67-.22-2.6-.83-3.19-.83H1.24Z", viewBox: { width: 49.3, height: 46.37 } },
-            gingerbread: { path: "M24.34.67c7.04-.41,11.21,7.84,6.81,13.43-.22.28-1.12,1.12-1.2,1.3-.25.54.31.76.76.58,1.99-.86,4.03-2.14,6.02-2.93,5.06-2,8.23,4.72,3.73,7.4-2.24,1.33-5.19,2.19-7.38,3.53-1.03.63-1.06,1.35-1.03,2.47.06,2.4.37,3.08,1.58,5.04,1.03,1.67,2.18,3.26,3.22,4.92.36.44,1.03.15,1.6.19,2.21.12,3.89,1.67,3.62,3.98-.2,1.7-3.83,3.8-5.31,4.44-2.74,1.2-3.99.67-5.73-1.54-1.59-2.02-3.06-4.58-4.71-6.48-.82-.94-1.99-1.16-2.95-.27-1.96,2.3-3.55,5.29-5.54,7.52-2.31,2.58-5.1.99-7.5-.54-1.83-1.17-3.68-2.45-2.68-4.9.77-1.89,2.76-2.49,4.64-2.06,1.27-2.06,2.83-3.97,4.06-6.05.87-1.48.81-1.77.95-3.44.11-1.33.49-2.4-.87-3.25-2.1-1.31-5.05-2.21-7.28-3.46-4.82-2.69-1.45-9.69,3.82-7.4,1.97.86,3.86,1.99,5.84,2.84l.59-.04c.57-.45-.75-1.41-1.03-1.76-4.38-5.24-.78-13.13,5.97-13.52Z", viewBox: { width: 49.3, height: 46.99 } },
-            pumpkin: { path: "M26.03,8.03c.73.15,1.31.63,1.92,1.02,2.63-1.46,5.32-.75,7.24,1.45,8.8.11,10.48,12.42,9.63,19.07-.64,4.99-2.72,13.91-8.93,14.33-.24.02-.48-.15-.7-.09-.1.03-1.15.87-1.45,1.04-1.62.87-3.51,1.12-5.26.47-.51-.19-.94-.54-1.46-.7-2.31,1.31-5.01,1.45-7.14-.29-1.9,1.68-4.24,1.7-6.39.48-.42-.24-1.13-.94-1.42-1.06-.3-.13-1.03-.18-1.45-.31-4.81-1.52-6.88-6.89-7.53-11.49-.81-5.81.58-19.61,7.63-21.37.42-.11.92-.09,1.27-.18.23-.06.79-.58,1.11-.75,2.06-1.12,4.25-1.44,6.34-.17l2.02-1.24c.08-1.61-.23-3.22-.61-4.78-.09-.38-.67-1.97-.6-2.16.02-.06.05-.08.09-.12.16-.14,2.28-.44,2.64-.46.68-.05,3.68-.06,4.03.51.2.33-.32,1.4-.42,1.86-.13.57-.72,4.76-.55,4.95Z", viewBox: { width: 47.94, height: 46.37 } },
-            star5: { path: "M46.47 18.15 32.9 28.56 38.29 45.03 24.16 34.5 9.85 45.03 15.07 28.59 1.47 18.15 18.61 18.15 23.97 1.59 29.62 18.15 46.47 18.15", viewBox: { width: 47.94, height: 46.37 } },
-            star6: { path: "M44.11 12.2 37.71 23.5 44.11 34.78 31.22 34.78 24.73 45.99 18.16 34.78 5.19 34.78 5.28 34.31 11.55 23.49 5.19 12.2 18.16 12.2 24.73 .99 31.22 12.2 44.11 12.2", viewBox: { width: 49.3, height: 46.99 } },
-            tree: { path: "M16.85,12.01c-.22-.03-2.2-.79-2.03-1.04,3.06-1.63,5.89-3.83,7.82-6.74.65-.99,1.09-2.07,1.67-3.09.07-.13-.01-.2.26-.15,1.57,4.76,5.57,7.95,9.86,10.21.2.27-1.16.81-1.39.87-.79.22-1.63.29-2.44.17-.41.41,1.44,1.88,1.77,2.11,1.77,1.24,4.05,2.08,6.23,1.95-.57,1.37-1.5,2.96-2.8,3.76-.32.2-.6.25-.89.39-.08.04-.22,0-.15.2.18.43,2.57,1.68,3.1,1.89,1.27.49,2.62.69,3.98.72-.81,1.57-2.14,2.9-3.79,3.58-.38.16-1.19.16-.95.58.12.2,1.48.68,1.79.82.11.05.2-.07.16.18-.33.37-.72.68-1.12.97-.26.19-1.47.81-1.43,1.01s1.82,1.29,2.13,1.47c2.3,1.34,4.81,2.2,7.5,2.19-1.29,2.73-3.34,4.79-6.31,5.58l-1.46.39c.7.65,1.74.89,2.67.99-2.61,2.25-6.7,3.87-9.91,1.86l-1.62,3.09c-2.03-.31-3.91-1.15-5.12-2.86-.14-.03-.91.95-1.15,1.15-.73.62-1.69,1.08-2.61,1.34-1.54.44-1.61.56-2.34-.91-.42-.84-.6-1.77-.97-2.63-2.31,2.08-5.71,1.56-8.38.48l-1.78-.95,1.68-.93c.23-.35-.58-.4-.64-.7l1.27-.76c0-.12-1.81-.57-2.09-.7-1.92-.86-3.26-2.83-4.52-4.41-.03-.25.03-.14.18-.17,2.93-.56,4.57-.56,7.33-2.07.33-.18,2.06-1.22,2.19-1.41.27-.4-.45-.55-.75-.77-.33-.25-.72-.5-.94-.86.59-.12,1.21-.47,1.74-.76.13-.07.28,0,.23-.23-.54-.33-1.13-.42-1.7-.74-1.53-.84-3.03-2.68-3.64-4.31,1.92.37,3.96.15,5.73-.71.24-.11,2.12-1.19,1.81-1.49-2.13-.28-3.6-2.42-4.29-4.29,2.42-.39,6.4-1.32,7.68-3.63.11-.21.24-.41.21-.66-.57-.05-1.25.07-1.8,0Z", viewBox: { width: 49.3, height: 46.99 } }
-          };
-          
-          const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
-          const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
-          const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
-          
-          useEffect(() => {
-            setWidthInput(formatUnit(convertFromInches(dimensions.width)));
-            setHeightInput(formatUnit(convertFromInches(dimensions.height)));
-          }, [units]);
-          
-          const generateHingePattern = useCallback((width, height, startX, endX) => {
-            const { bridgeWidth, rowSpacing, cutLength } = hingeDefaults;
-            const activeWidth = endX - startX;
-            const numColumns = Math.floor(activeWidth / rowSpacing);
-            const lines = [];
-            const cutPlusBridge = cutLength + bridgeWidth;
-            const numCompleteUnits = Math.floor(height / cutPlusBridge);
-            const totalCompleteHeight = numCompleteUnits * cutPlusBridge;
-            const centerOffset = (height - totalCompleteHeight) / 2;
-            
-            for (let col = 0; col < numColumns; col++) {
-              const x = startX + col * rowSpacing;
-              const isEvenCol = col % 2 === 0;
-              const brickOffset = isEvenCol ? 0 : cutPlusBridge / 2;
-              const startYPos = centerOffset + brickOffset;
-              
-              for (let y = startYPos - cutPlusBridge; y < height + cutPlusBridge; y += cutPlusBridge) {
-                let y1 = Math.max(y, 0);
-                let y2 = Math.min(y + cutLength, height);
-                if (y2 > 0 && y1 < height && y2 - y1 > 0.01) {
-                  lines.push({ x, y1, x2: x, y2 });
-                }
-              }
-            }
-            return lines;
-          }, [hingeDefaults]);
-          
-          const calculateCutoutPositions = useCallback(() => {
-            const { width, height } = dimensions;
-            const { columns, rows } = gridConfig;
-            const availableWidth = width - (2 * edgeMargin);
-            const availableHeight = height - (2 * edgeMargin);
-            const totalCutoutWidth = columns * cutoutSize;
-            const spacingX = (availableWidth - totalCutoutWidth) / (columns + 1);
-            const totalCutoutHeight = rows * cutoutSize;
-            const maxVerticalSpacing = rows === 1 ? 0 : (availableHeight - totalCutoutHeight) / (rows - 1);
-            
-            const cutouts = [];
-            for (let row = 0; row < rows; row++) {
-              for (let col = 0; col < columns; col++) {
-                const x = edgeMargin + spacingX * (col + 1) + cutoutSize * col;
-                const y = rows === 1 ? edgeMargin + (availableHeight - cutoutSize) / 2 : edgeMargin + (row * (cutoutSize + maxVerticalSpacing));
-                cutouts.push({ x, y, width: cutoutSize, height: cutoutSize });
-              }
-            }
-            return cutouts;
-          }, [dimensions, gridConfig]);
-          
-          const splitLineAroundCutouts = (line, cutouts) => {
-            const lineX = line.x;
-            const lineY1 = line.y1;
-            const lineY2 = line.y2;
-            const intersectingCutouts = cutouts.filter(cutout => lineX >= cutout.x && lineX <= (cutout.x + cutout.width)).sort((a, b) => a.y - b.y);
-            if (intersectingCutouts.length === 0) return [line];
-            
-            const segments = [];
-            let currentY = lineY1;
-            for (const cutout of intersectingCutouts) {
-              const cutoutTop = cutout.y;
-              const cutoutBottom = cutout.y + cutout.height;
-              if (currentY < cutoutTop) {
-                const segmentLength = Math.min(cutoutTop, lineY2) - currentY;
-                if (segmentLength > 0.001) {
-                  segments.push({ x: lineX, y1: currentY, x2: lineX, y2: Math.min(cutoutTop, lineY2) });
-                }
-              }
-              if (cutoutBottom > currentY) currentY = cutoutBottom;
-            }
-            if (currentY < lineY2) {
-              const segmentLength = lineY2 - currentY;
-              if (segmentLength > 0.001) {
-                segments.push({ x: lineX, y1: currentY, x2: lineX, y2: lineY2 });
-              }
-            }
-            return segments;
-          };
-          
-          const generateSVG = useCallback(() => {
-            const { width, height } = dimensions;
-            const activeStart = solidMargin;
-            const activeEnd = width - solidMargin;
-            const cutouts = calculateCutoutPositions();
-            const allLines = generateHingePattern(width, height, activeStart, activeEnd);
-            const finalLines = [];
-            allLines.forEach(line => {
-              const segments = splitLineAroundCutouts(line, cutouts);
-              finalLines.push(...segments);
-            });
-            
-            const spacing = 0.25;
-            const fastenerLength = height;
-            const fastenerThickness = fastenerWidth;
-            const svgHeight = height + spacing + fastenerThickness;
-            const svgWidth = Math.max(width, fastenerLength * 2 + spacing);
-            
-            let svgContent = '<?xml version="1.0" encoding="UTF-8"?>\n';
-            svgContent += '<!-- Generated by Candle Shade Designer v1.0.1 - https://greylightmay.github.io -->\n';
-            svgContent += '<svg width="' + svgWidth + 'in" height="' + svgHeight + 'in" viewBox="0 0 ' + svgWidth + ' ' + svgHeight + '" xmlns="http://www.w3.org/2000/svg">\n';
-            svgContent += '  <defs><style>.cut-line { stroke: rgb(255,0,0); stroke-width: ' + hingeDefaults.kerfWidth + '; fill: none; } .cut-line-motif { stroke: rgb(255,0,0); stroke-width: 1.0; fill: none; } .outline { stroke: rgb(255,0,0); stroke-width: ' + hingeDefaults.kerfWidth + '; fill: none; }</style></defs>\n';
-            svgContent += '  <g id="shade"><rect x="0" y="0" width="' + width + '" height="' + height + '" class="outline" /><g id="hinge-pattern">\n';
-            finalLines.forEach((line) => {
-              svgContent += '      <line x1="' + line.x + '" y1="' + line.y1 + '" x2="' + line.x2 + '" y2="' + line.y2 + '" class="cut-line" />\n';
-            });
-            svgContent += '    </g>\n';
-            
-            if (motifType !== 'none' && motifData[motifType]) {
-              const motif = motifData[motifType];
-              const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
-              svgContent += '    <g id="motifs">\n';
-              cutouts.forEach((cutout) => {
-                const scaledWidth = motif.viewBox.width * scale;
-                const scaledHeight = motif.viewBox.height * scale;
-                const offsetX = cutout.x + (cutout.width - scaledWidth) / 2;
-                const offsetY = cutout.y + (cutout.height - scaledHeight) / 2;
-                svgContent += '      <g transform="translate(' + offsetX.toFixed(4) + ', ' + offsetY.toFixed(4) + ') scale(' + scale.toFixed(6) + ')"><path d="' + motif.path + '" class="cut-line-motif" /></g>\n';
-              });
-              svgContent += '    </g>\n';
-            }
-            svgContent += '  </g>\n  <g id="fasteners">\n';
-            svgContent += '    <rect x="0" y="' + (height + spacing) + '" width="' + fastenerLength + '" height="' + fastenerThickness + '" class="outline" />\n';
-            svgContent += '    <rect x="' + (fastenerLength + spacing) + '" y="' + (height + spacing) + '" width="' + fastenerLength + '" height="' + fastenerThickness + '" class="outline" />\n';
-            svgContent += '  </g></svg>';
-            return svgContent;
-          }, [dimensions, solidMargin, fastenerWidth, calculateCutoutPositions, generateHingePattern, splitLineAroundCutouts, hingeDefaults, motifType, motifData, cutoutSize]);
-          
-          const downloadSVG = () => {
-            const svgContent = generateSVG();
-            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            const motifName = motifType === 'none' ? 'blank' : motifType;
-            link.download = 'candle-shade-' + dimensions.width + 'x' + dimensions.height + 'in-' + motifName + '.svg';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          };
-          
-          return (
-            <div className="max-w-6xl mx-auto p-6 bg-white">
-              <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Candle Shade Designer</h1>
-              <p className="text-center text-gray-600 mb-2">Phase 1: Living hinges with decorative motifs</p>
-              <p className="text-center text-gray-500 text-sm mb-8">v1.0.1</p>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                  <div className="bg-gray-50 p-6 rounded-lg">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-xl font-semibold text-gray-700">Shade Dimensions</h2>
-                      <div className="flex items-center space-x-2">
-                        <label className="text-sm text-gray-600">Units:</label>
-                        <select value={units} onChange={(e) => setUnits(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm">
-                          <option value="inches">inches</option>
-                          <option value="mm">mm</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-600 mb-1">Width (wraps around candle) ({units})</label>
-                        <input type="number" value={widthInput} onChange={(e) => { setWidthInput(e.target.value); const value = parseFloat(e.target.value); if (!isNaN(value) && value > 0) setDimensions(prev => ({ ...prev, width: convertToInches(value) })); }} onBlur={() => { const value = parseFloat(widthInput); if (!isNaN(value) && value > 0) setWidthInput(value.toString()); else setWidthInput(convertFromInches(dimensions.width).toString()); }} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500" min="1" step={units === 'inches' ? 0.1 : 1} />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-600 mb-1">Height (candle height) ({units})</label>
-                        <input type="number" value={heightInput} onChange={(e) => { setHeightInput(e.target.value); const value = parseFloat(e.target.value); if (!isNaN(value) && value > 0) { const heightInInches = convertToInches(value); if (heightInInches < minHeight) alert('Warning: Height is below minimum of ' + minHeight.toFixed(2) + '" (' + convertFromInches(minHeight).toFixed(units === 'mm' ? 1 : 2) + units + '). The design may not have enough space for motifs.'); setDimensions(prev => ({ ...prev, height: heightInInches })); } }} onBlur={() => { const value = parseFloat(heightInput); if (!isNaN(value) && value > 0) setHeightInput(value.toString()); else setHeightInput(convertFromInches(dimensions.height).toString()); }} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500" min="1" step={units === 'inches' ? 0.1 : 1} />
-                        <p className="text-xs text-red-600 mt-1 font-semibold">To show motifs, minimum height: {minHeight.toFixed(2)}" ({(minHeight * 25.4).toFixed(1)}mm)</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gray-50 p-6 rounded-lg">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Decorative Motif</h2>
-                    <select value={motifType} onChange={(e) => setMotifType(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
-                      <option value="none">None (blank rectangles)</option>
-                      <option value="bat">🦇 Bat</option>
-                      <option value="gingerbread">🍪 Gingerbread Man</option>
-                      <option value="pumpkin">🎃 Pumpkin</option>
-                      <option value="star5">⭐ 5-Point Star</option>
-                      <option value="star6">✨ 6-Point Star</option>
-                      <option value="tree">🎄 Christmas Tree</option>
+          }
+          if (cutoutBottom > currentY) currentY = cutoutBottom;
+        }
+        if (currentY < lineY2) {
+          const segmentLength = lineY2 - currentY;
+          if (segmentLength > 0.001) {
+            segments.push({ x: lineX, y1: currentY, x2: lineX, y2: lineY2 });
+          }
+        }
+        return segments;
+      };
+
+      const generateSVG = useCallback(() => {
+        const { width, height } = dimensions;
+        const activeStart = solidMargin;
+        const activeEnd = width - solidMargin;
+        const cutouts = calculateCutoutPositions();
+        const allLines = generateHingePattern(width, height, activeStart, activeEnd);
+        const finalLines = [];
+        allLines.forEach(line => {
+          const segments = splitLineAroundCutouts(line, cutouts);
+          finalLines.push(...segments);
+        });
+
+        const spacing = 0.25;
+        const fastenerLength = height;
+        const fastenerThickness = fastenerWidth;
+        const svgHeight = height + spacing + fastenerThickness;
+        const svgWidth = Math.max(width, fastenerLength * 2 + spacing);
+
+        let svgContent = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        svgContent += '<!-- Generated by Candle Shade Designer v1.0.1 - https://greylightmay.github.io -->\n';
+        svgContent += '<svg width="' + svgWidth + 'in" height="' + svgHeight + 'in" viewBox="0 0 ' + svgWidth + ' ' + svgHeight + '" xmlns="http://www.w3.org/2000/svg">\n';
+        svgContent += '  <defs><style>.cut-line { stroke: rgb(255,0,0); stroke-width: ' + hingeDefaults.kerfWidth + '; fill: none; } .cut-line-motif { stroke: rgb(255,0,0); stroke-width: 1.0; fill: none; } .outline { stroke: rgb(255,0,0); stroke-width: ' + hingeDefaults.kerfWidth + '; fill: none; }</style></defs>\n';
+        svgContent += '  <g id="shade"><rect x="0" y="0" width="' + width + '" height="' + height + '" class="outline" /><g id="hinge-pattern">\n';
+        finalLines.forEach((line) => {
+          svgContent += '      <line x1="' + line.x + '" y1="' + line.y1 + '" x2="' + line.x2 + '" y2="' + line.y2 + '" class="cut-line" />\n';
+        });
+        svgContent += '    </g>\n';
+
+        if (motifType !== 'none' && motifData[motifType]) {
+          const motif = motifData[motifType];
+          const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
+          svgContent += '    <g id="motifs">\n';
+          cutouts.forEach((cutout) => {
+            const scaledWidth = motif.viewBox.width * scale;
+            const scaledHeight = motif.viewBox.height * scale;
+            const offsetX = cutout.x + (cutout.width - scaledWidth) / 2;
+            const offsetY = cutout.y + (cutout.height - scaledHeight) / 2;
+            svgContent += '      <g transform="translate(' + offsetX.toFixed(4) + ', ' + offsetY.toFixed(4) + ') scale(' + scale.toFixed(6) + ')"><path d="' + motif.path + '" class="cut-line-motif" /></g>\n';
+          });
+          svgContent += '    </g>\n';
+        }
+        svgContent += '  </g>\n  <g id="fasteners">\n';
+        svgContent += '    <rect x="0" y="' + (height + spacing) + '" width="' + fastenerLength + '" height="' + fastenerThickness + '" class="outline" />\n';
+        svgContent += '    <rect x="' + (fastenerLength + spacing) + '" y="' + (height + spacing) + '" width="' + fastenerLength + '" height="' + fastenerThickness + '" class="outline" />\n';
+        svgContent += '  </g></svg>';
+        return svgContent;
+      }, [dimensions, solidMargin, fastenerWidth, calculateCutoutPositions, generateHingePattern, splitLineAroundCutouts, hingeDefaults, motifType, motifData, cutoutSize]);
+
+      const downloadSVG = () => {
+        const svgContent = generateSVG();
+        const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const motifName = motifType === 'none' ? 'blank' : motifType;
+        link.download = 'candle-shade-' + dimensions.width + 'x' + dimensions.height + 'in-' + motifName + '.svg';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      };
+
+      return (
+        <div className="max-w-6xl mx-auto p-6 bg-white">
+          <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Candle Shade Designer</h1>
+          <p className="text-center text-gray-600 mb-2">Phase 1: Living hinges with decorative motifs</p>
+          <p className="text-center text-gray-500 text-sm mb-8">v1.0.1</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-gray-700">Shade Dimensions</h2>
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm text-gray-600">Units:</label>
+                    <select value={units} onChange={(e) => setUnits(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value="inches">inches</option>
+                      <option value="mm">mm</option>
                     </select>
                   </div>
-                  
-                  <div className="bg-gray-50 p-6 rounded-lg">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Laser Type</h2>
-                    <div className="space-y-2">
-                      <label className="flex items-center"><input type="radio" value="co2" checked={laserType === 'co2'} onChange={(e) => setLaserType(e.target.value)} className="mr-2" /><span>CO2 Laser (0.3mm kerf)</span></label>
-                      <label className="flex items-center"><input type="radio" value="diode" checked={laserType === 'diode'} onChange={(e) => setLaserType(e.target.value)} className="mr-2" /><span>Blue Diode Laser (0.1mm kerf)</span></label>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gray-50 p-6 rounded-lg">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Pattern Info</h2>
-                    <div className="text-sm text-gray-600 space-y-2">
-                      <p><strong>Cutout Grid:</strong> {gridConfig.columns} × {gridConfig.rows} (adaptive based on height)</p>
-                      <p><strong>Cutout Size:</strong> 0.75" × 0.75" squares</p>
-                      <p><strong>Solid Margins:</strong> 0.25" on each end (for fasteners)</p>
-                      <p><strong>Edge Margin:</strong> 0.5" (keeps cutouts away from edges)</p>
-                      <p><strong>Active Hinge Area:</strong> {(dimensions.width - 2 * solidMargin).toFixed(2)}"</p>
-                      <p><strong>Living Hinge:</strong> Standard kerf, {laserType === 'diode' ? '1.5mm' : '1.8mm'} row spacing</p>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                    <h3 className="font-semibold text-blue-900 mb-2">📦 Download Includes:</h3>
-                    <ul className="text-sm text-blue-800 space-y-1">
-                      <li>• Main shade with living hinge pattern</li>
-                      <li>• {motifType !== 'none' ? 'Decorative motifs' : 'Blank zones for decorative shapes'}</li>
-                      <li>• Two fastener pieces (0.5" × {dimensions.height}")</li>
-                      <li>• Ready to laser cut!</li>
-                    </ul>
-                  </div>
-                  
-                  <button onClick={downloadSVG} className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold">Download Complete SVG</button>
                 </div>
-                
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold text-gray-700">Preview</h2>
-                    <select value={zoomLevel} onChange={(e) => setZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
-                      <option value={0.5}>50%</option>
-                      <option value={1}>100%</option>
-                      <option value={1.5}>150%</option>
-                      <option value={2}>200%</option>
-                    </select>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Width (wraps around candle) ({units})</label>
+                    <input type="number" value={widthInput} onChange={(e) => { setWidthInput(e.target.value); const value = parseFloat(e.target.value); if (!isNaN(value) && value > 0) setDimensions(prev => ({ ...prev, width: convertToInches(value) })); }} onBlur={() => { const value = parseFloat(widthInput); if (!isNaN(value) && value > 0) setWidthInput(value.toString()); else setWidthInput(convertFromInches(dimensions.width).toString()); }} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500" min="1" step={units === 'inches' ? 0.1 : 1} />
                   </div>
-                  
-                  <div className="border border-gray-300 rounded-lg p-4 bg-white overflow-auto" style={{ maxHeight: '600px', maxWidth: '100%' }}>
-                    <svg width={(dimensions.width * 96 * zoomLevel) + 'px'} height={(dimensions.height * 96 * zoomLevel) + 'px'} viewBox={'0 0 ' + dimensions.width + ' ' + dimensions.height} className="border-2 border-blue-500" style={{ background: '#f3e5ab', display: 'block' }}>
-                      <rect x="0" y="0" width={dimensions.width} height={dimensions.height} stroke="#dc2626" strokeWidth="0.01" fill="none" />
-                      <rect x="0" y="0" width={solidMargin} height={dimensions.height} fill="rgba(100,100,100,0.1)" />
-                      <rect x={dimensions.width - solidMargin} y="0" width={solidMargin} height={dimensions.height} fill="rgba(100,100,100,0.1)" />
-                      <g>
-                        {(() => {
-                          const activeStart = solidMargin;
-                          const activeEnd = dimensions.width - solidMargin;
-                          const cutouts = calculateCutoutPositions();
-                          const allLines = generateHingePattern(dimensions.width, dimensions.height, activeStart, activeEnd);
-                          const finalLines = [];
-                          allLines.forEach(line => {
-                            const segments = splitLineAroundCutouts(line, cutouts);
-                            finalLines.push(...segments);
-                          });
-                          return finalLines.map((line, idx) => (
-                            <line key={idx} x1={line.x} y1={line.y1} x2={line.x2} y2={line.y2} stroke="#dc2626" strokeWidth="0.01" />
-                          ));
-                        })()}
-                      </g>
-                      <g>
-                        {(() => {
-                          const cutouts = calculateCutoutPositions();
-                          if (motifType === 'none') {
-                            return cutouts.map((cutout, idx) => (
-                              <rect key={idx} x={cutout.x} y={cutout.y} width={cutout.width} height={cutout.height} fill="rgba(150,150,150,0.2)" stroke="rgba(100,100,100,0.4)" strokeWidth="0.01" strokeDasharray="0.05,0.05" />
-                            ));
-                          } else if (motifData[motifType]) {
-                            const motif = motifData[motifType];
-                            const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
-                            return cutouts.map((cutout, idx) => {
-                              const scaledWidth = motif.viewBox.width * scale;
-                              const scaledHeight = motif.viewBox.height * scale;
-                              const offsetX = cutout.x + (cutout.width - scaledWidth) / 2;
-                              const offsetY = cutout.y + (cutout.height - scaledHeight) / 2;
-                              return (
-                                <g key={idx} transform={'translate(' + offsetX + ', ' + offsetY + ') scale(' + scale + ')'}>
-                                  <path d={motif.path} stroke="#dc2626" strokeWidth={0.01 / scale} fill="none" />
-                                </g>
-                              );
-                            });
-                          }
-                        })()}
-                      </g>
-                    </svg>
-                  </div>
-                  
-                  <div className="mt-4 text-sm text-gray-600 text-center space-y-1">
-                    <p><strong>Dark gray areas:</strong> Solid margins (no hinge cuts) - where fasteners attach</p>
-                    {motifType === 'none' ? <p><strong>Light gray rectangles:</strong> Blank zones for decorative shapes</p> : <p><strong>Motifs:</strong> Decorative shapes positioned in cutout zones</p>}
-                    <p><strong>Red lines:</strong> Living hinge cuts (split around cutout zones)</p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Height (candle height) ({units})</label>
+                    <input type="number" value={heightInput} onChange={(e) => { setHeightInput(e.target.value); const value = parseFloat(e.target.value); if (!isNaN(value) && value > 0) { const heightInInches = convertToInches(value); if (heightInInches < minHeight) alert('Warning: Height is below minimum of ' + minHeight.toFixed(2) + '" (' + convertFromInches(minHeight).toFixed(units === 'mm' ? 1 : 2) + units + '). The design may not have enough space for motifs.'); setDimensions(prev => ({ ...prev, height: heightInInches })); } }} onBlur={() => { const value = parseFloat(heightInput); if (!isNaN(value) && value > 0) setHeightInput(value.toString()); else setHeightInput(convertFromInches(dimensions.height).toString()); }} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500" min="1" step={units === 'inches' ? 0.1 : 1} />
+                    <p className="text-xs text-red-600 mt-1 font-semibold">To show motifs, minimum height: {minHeight.toFixed(2)}" ({(minHeight * 25.4).toFixed(1)}mm)</p>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        };
 
-        ReactDOM.render(<CandleShadeDesigner />, document.getElementById('root'));
-    </script>
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h2 className="text-xl font-semibold mb-4 text-gray-700">Decorative Motif</h2>
+                <select value={motifType} onChange={(e) => setMotifType(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                  <option value="none">None (blank rectangles)</option>
+                  <option value="bat">🦇 Bat</option>
+                  <option value="gingerbread">🍪 Gingerbread Man</option>
+                  <option value="pumpkin">🎃 Pumpkin</option>
+                  <option value="star5">⭐ 5-Point Star</option>
+                  <option value="star6">✨ 6-Point Star</option>
+                  <option value="tree">🎄 Christmas Tree</option>
+                </select>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h2 className="text-xl font-semibold mb-4 text-gray-700">Laser Type</h2>
+                <div className="space-y-2">
+                  <label className="flex items-center"><input type="radio" value="co2" checked={laserType === 'co2'} onChange={(e) => setLaserType(e.target.value)} className="mr-2" /><span>CO2 Laser (0.3mm kerf)</span></label>
+                  <label className="flex items-center"><input type="radio" value="diode" checked={laserType === 'diode'} onChange={(e) => setLaserType(e.target.value)} className="mr-2" /><span>Blue Diode Laser (0.1mm kerf)</span></label>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h2 className="text-xl font-semibold mb-4 text-gray-700">Pattern Info</h2>
+                <div className="text-sm text-gray-600 space-y-2">
+                  <p><strong>Cutout Grid:</strong> {gridConfig.columns} × {gridConfig.rows} (adaptive based on height)</p>
+                  <p><strong>Cutout Size:</strong> 0.75" × 0.75" squares</p>
+                  <p><strong>Solid Margins:</strong> 0.25" on each end (for fasteners)</p>
+                  <p><strong>Edge Margin:</strong> 0.5" (keeps cutouts away from edges)</p>
+                  <p><strong>Active Hinge Area:</strong> {(dimensions.width - 2 * solidMargin).toFixed(2)}"</p>
+                  <p><strong>Living Hinge:</strong> Standard kerf, {laserType === 'diode' ? '1.5mm' : '1.8mm'} row spacing</p>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                <h3 className="font-semibold text-blue-900 mb-2">📦 Download Includes:</h3>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• Main shade with living hinge pattern</li>
+                  <li>• {motifType !== 'none' ? 'Decorative motifs' : 'Blank zones for decorative shapes'}</li>
+                  <li>• Two fastener pieces (0.5" × {dimensions.height}")</li>
+                  <li>• Ready to laser cut!</li>
+                </ul>
+              </div>
+
+              <button onClick={downloadSVG} className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold">Download Complete SVG</button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-700">Preview</h2>
+                <select value={zoomLevel} onChange={(e) => setZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                  <option value={0.5}>50%</option>
+                  <option value={1}>100%</option>
+                  <option value={1.5}>150%</option>
+                  <option value={2}>200%</option>
+                </select>
+              </div>
+
+              <div className="border border-gray-300 rounded-lg p-4 bg-white overflow-auto" style={{ maxHeight: '600px', maxWidth: '100%' }}>
+                <svg width={(dimensions.width * 96 * zoomLevel) + 'px'} height={(dimensions.height * 96 * zoomLevel) + 'px'} viewBox={'0 0 ' + dimensions.width + ' ' + dimensions.height} className="border-2 border-blue-500" style={{ background: '#f3e5ab', display: 'block' }}>
+                  <rect x="0" y="0" width={dimensions.width} height={dimensions.height} stroke="#dc2626" strokeWidth="0.01" fill="none" />
+                  <rect x="0" y="0" width={solidMargin} height={dimensions.height} fill="rgba(100,100,100,0.1)" />
+                  <rect x={dimensions.width - solidMargin} y="0" width={solidMargin} height={dimensions.height} fill="rgba(100,100,100,0.1)" />
+                  <g>
+                    {(() => {
+                      const activeStart = solidMargin;
+                      const activeEnd = dimensions.width - solidMargin;
+                      const cutouts = calculateCutoutPositions();
+                      const allLines = generateHingePattern(dimensions.width, dimensions.height, activeStart, activeEnd);
+                      const finalLines = [];
+                      allLines.forEach(line => {
+                        const segments = splitLineAroundCutouts(line, cutouts);
+                        finalLines.push(...segments);
+                      });
+                      return finalLines.map((line, idx) => (
+                        <line key={idx} x1={line.x} y1={line.y1} x2={line.x2} y2={line.y2} stroke="#dc2626" strokeWidth="0.01" />
+                      ));
+                    })()}
+                  </g>
+                  <g>
+                    {(() => {
+                      const cutouts = calculateCutoutPositions();
+                      if (motifType === 'none') {
+                        return cutouts.map((cutout, idx) => (
+                          <rect key={idx} x={cutout.x} y={cutout.y} width={cutout.width} height={cutout.height} fill="rgba(150,150,150,0.2)" stroke="rgba(100,100,100,0.4)" strokeWidth="0.01" strokeDasharray="0.05,0.05" />
+                        ));
+                      } else if (motifData[motifType]) {
+                        const motif = motifData[motifType];
+                        const scale = (cutoutSize * 0.85) / Math.max(motif.viewBox.width, motif.viewBox.height);
+                        return cutouts.map((cutout, idx) => {
+                          const scaledWidth = motif.viewBox.width * scale;
+                          const scaledHeight = motif.viewBox.height * scale;
+                          const offsetX = cutout.x + (cutout.width - scaledWidth) / 2;
+                          const offsetY = cutout.y + (cutout.height - scaledHeight) / 2;
+                          return (
+                            <g key={idx} transform={'translate(' + offsetX + ', ' + offsetY + ') scale(' + scale + ')'}>
+                              <path d={motif.path} stroke="#dc2626" strokeWidth={0.01 / scale} fill="none" />
+                            </g>
+                          );
+                        });
+                      }
+                    })()}
+                  </g>
+                </svg>
+              </div>
+
+              <div className="mt-4 text-sm text-gray-600 text-center space-y-1">
+                <p><strong>Dark gray areas:</strong> Solid margins (no hinge cuts) - where fasteners attach</p>
+                {motifType === 'none' ? <p><strong>Light gray rectangles:</strong> Blank zones for decorative shapes</p> : <p><strong>Motifs:</strong> Decorative shapes positioned in cutout zones</p>}
+                <p><strong>Red lines:</strong> Living hinge cuts (split around cutout zones)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<CandleShadeDesigner />, document.getElementById('root'));
+  </script>
 </body>
+
 </html>
