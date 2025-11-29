@@ -1,0 +1,706 @@
+<!--
+  Tool: Divider Designer
+  Version: v1.0.1
+  Last Updated: November 29, 2025
+  Author: GreyLightMay
+  Website: https://greylightmay.com
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Divider Designer v1.0.1</title>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
+    <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+
+        const DividerDesigner = () => {
+          const [units, setUnits] = useState('inches');
+          const [containerDims, setContainerDims] = useState({ width: 10, depth: 8, height: 2 });
+          const [gridSize, setGridSize] = useState({ columns: 3, rows: 3 });
+          const [materialThickness, setMaterialThickness] = useState(0.125);
+          const [materialPreset, setMaterialPreset] = useState('0.125');
+          const [bedSize, setBedSize] = useState({ width: 12, height: 20 });
+          const [bedPreset, setBedPreset] = useState('12x20');
+          const [zoomLevel, setZoomLevel] = useState(1);
+          
+          const [columnMins, setColumnMins] = useState(['', '', '']);
+          const [rowMins, setRowMins] = useState(['', '', '']);
+          
+          const [widthInput, setWidthInput] = useState('10');
+          const [depthInput, setDepthInput] = useState('8');
+          const [heightInput, setHeightInput] = useState('2');
+          const [customThickness, setCustomThickness] = useState('');
+          const [customBedWidth, setCustomBedWidth] = useState('');
+          const [customBedHeight, setCustomBedHeight] = useState('');
+          const [filename, setFilename] = useState('dividers');
+
+          const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
+          const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
+          const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+
+          useEffect(() => {
+            setWidthInput(formatUnit(convertFromInches(containerDims.width)));
+            setDepthInput(formatUnit(convertFromInches(containerDims.depth)));
+            setHeightInput(formatUnit(convertFromInches(containerDims.height)));
+            
+            const format = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+            
+            setColumnMins(prev => prev.map(m => {
+              if (m === '') return '';
+              const val = parseFloat(m);
+              if (isNaN(val)) return '';
+              const converted = units === 'mm' ? val * 25.4 : val / 25.4;
+              return format(converted);
+            }));
+            
+            setRowMins(prev => prev.map(m => {
+              if (m === '') return '';
+              const val = parseFloat(m);
+              if (isNaN(val)) return '';
+              const converted = units === 'mm' ? val * 25.4 : val / 25.4;
+              return format(converted);
+            }));
+            
+            if (materialPreset !== 'custom') {
+              const inchToMm = { '0.125': '3.175', '0.118': '3.0', '0.25': '6.35', '0.236': '6.0' };
+              const mmToInch = { '3.175': '0.125', '3.0': '0.118', '6.35': '0.25', '6.0': '0.236' };
+              
+              if (units === 'mm' && inchToMm[materialPreset]) {
+                setMaterialPreset(inchToMm[materialPreset]);
+              } else if (units === 'inches' && mmToInch[materialPreset]) {
+                setMaterialPreset(mmToInch[materialPreset]);
+              }
+            }
+          }, [units]);
+
+          useEffect(() => {
+            if (materialPreset === 'custom') return;
+            const presets = units === 'inches' 
+              ? { '0.125': 0.125, '0.25': 0.25, '0.118': 0.118, '0.236': 0.236 }
+              : { '3.0': 3.0 / 25.4, '6.0': 6.0 / 25.4, '3.175': 3.175 / 25.4, '6.35': 6.35 / 25.4 };
+            setMaterialThickness(presets[materialPreset] || 0.125);
+          }, [materialPreset, units]);
+
+          useEffect(() => {
+            setColumnMins(prev => {
+              const newMins = [...prev];
+              while (newMins.length < gridSize.columns) newMins.push('');
+              return newMins.slice(0, gridSize.columns);
+            });
+            setRowMins(prev => {
+              const newMins = [...prev];
+              while (newMins.length < gridSize.rows) newMins.push('');
+              return newMins.slice(0, gridSize.rows);
+            });
+          }, [gridSize]);
+
+          const calculateCompartments = useCallback(() => {
+            const { width, depth } = containerDims;
+            const { columns, rows } = gridSize;
+            
+            const availableWidth = width - (columns - 1) * materialThickness;
+            const availableDepth = depth - (rows - 1) * materialThickness;
+            
+            const colMinsParsed = columnMins.map(m => {
+              const val = parseFloat(m);
+              return isNaN(val) ? 0 : convertToInches(val);
+            });
+            const totalColMins = colMinsParsed.reduce((a, b) => a + b, 0);
+            const flexibleCols = colMinsParsed.filter(m => m === 0).length;
+            const remainingWidth = availableWidth - totalColMins;
+            const flexColWidth = flexibleCols > 0 ? remainingWidth / flexibleCols : 0;
+            
+            const columnWidths = colMinsParsed.map(min => 
+              min === 0 ? flexColWidth : min
+            );
+            
+            const rowMinsParsed = rowMins.map(m => {
+              const val = parseFloat(m);
+              return isNaN(val) ? 0 : convertToInches(val);
+            });
+            const totalRowMins = rowMinsParsed.reduce((a, b) => a + b, 0);
+            const flexibleRows = rowMinsParsed.filter(m => m === 0).length;
+            const remainingDepth = availableDepth - totalRowMins;
+            const flexRowDepth = flexibleRows > 0 ? remainingDepth / flexibleRows : 0;
+            
+            const rowDepths = rowMinsParsed.map(min => 
+              min === 0 ? flexRowDepth : min
+            );
+            
+            const widthWarning = remainingWidth < 0;
+            const depthWarning = remainingDepth < 0;
+            const minSizeWarning = columnWidths.some(w => w < materialThickness) || 
+                                  rowDepths.some(d => d < materialThickness);
+            
+            return {
+              columnWidths,
+              rowDepths,
+              availableWidth,
+              availableDepth,
+              widthWarning,
+              depthWarning,
+              minSizeWarning
+            };
+          }, [containerDims, gridSize, materialThickness, columnMins, rowMins, convertToInches]);
+
+          const calculateSlotPositions = useCallback(() => {
+            const { columnWidths, rowDepths } = calculateCompartments();
+            const { columns, rows } = gridSize;
+            
+            const widthPositions = [];
+            let cumWidth = 0;
+            for (let i = 0; i < columns - 1; i++) {
+              cumWidth += columnWidths[i];
+              widthPositions.push(cumWidth);
+              cumWidth += materialThickness;
+            }
+            
+            const depthPositions = [];
+            let cumDepth = 0;
+            for (let i = 0; i < rows - 1; i++) {
+              cumDepth += rowDepths[i];
+              depthPositions.push(cumDepth);
+              cumDepth += materialThickness;
+            }
+            
+            return { widthPositions, depthPositions };
+          }, [calculateCompartments, gridSize, materialThickness]);
+
+          const generateDividerPath = (length, height, slotPositions, slotsFromTop) => {
+            const slotWidth = materialThickness;
+            const slotDepth = height / 2;
+            
+            let path = `M 0 0`;
+            
+            if (slotsFromTop) {
+              let currentX = 0;
+              slotPositions.forEach(pos => {
+                path += ` L ${pos} 0`;
+                path += ` L ${pos} ${slotDepth}`;
+                path += ` L ${pos + slotWidth} ${slotDepth}`;
+                path += ` L ${pos + slotWidth} 0`;
+                currentX = pos + slotWidth;
+              });
+              path += ` L ${length} 0`;
+              path += ` L ${length} ${height}`;
+              path += ` L 0 ${height}`;
+              path += ` Z`;
+            } else {
+              path += ` L ${length} 0`;
+              path += ` L ${length} ${height}`;
+              
+              let positions = [...slotPositions].reverse();
+              positions.forEach(pos => {
+                path += ` L ${pos + slotWidth} ${height}`;
+                path += ` L ${pos + slotWidth} ${height - slotDepth}`;
+                path += ` L ${pos} ${height - slotDepth}`;
+                path += ` L ${pos} ${height}`;
+              });
+              
+              path += ` L 0 ${height}`;
+              path += ` Z`;
+            }
+            
+            return path;
+          };
+
+          const checkBedFit = useCallback(() => {
+            const { width, depth, height } = containerDims;
+            const { columns, rows } = gridSize;
+            
+            const numLengthwise = columns - 1;
+            const numWidthwise = rows - 1;
+            
+            const pieces = [];
+            
+            if (numLengthwise > 0) {
+              pieces.push({
+                name: 'Vertical divider',
+                width: depth,
+                height: height,
+                count: numLengthwise
+              });
+            }
+            
+            if (numWidthwise > 0) {
+              pieces.push({
+                name: 'Horizontal divider',
+                width: width,
+                height: height,
+                count: numWidthwise
+              });
+            }
+            
+            const largest = pieces.reduce((max, p) => 
+              (p.width * p.height > max.width * max.height) ? p : max,
+              { width: 0, height: 0, name: 'None' }
+            );
+            
+            // Check if piece fits in either orientation
+            const fitsNormal = largest.width <= bedSize.width && largest.height <= bedSize.height;
+            const fitsRotated = largest.height <= bedSize.width && largest.width <= bedSize.height;
+            const fits = fitsNormal || fitsRotated;
+            
+            // For tight fit warning, check the best orientation
+            const marginNormal = fitsNormal ? Math.min(bedSize.width - largest.width, bedSize.height - largest.height) : -1;
+            const marginRotated = fitsRotated ? Math.min(bedSize.width - largest.height, bedSize.height - largest.width) : -1;
+            const bestMargin = Math.max(marginNormal, marginRotated);
+            const tight = fits && bestMargin < 0.5 && bestMargin >= 0;
+            
+            return { fits, tight, largest, pieces };
+          }, [containerDims, gridSize, bedSize]);
+
+          const generateSVG = useCallback(() => {
+            const { width, depth, height } = containerDims;
+            const { columns, rows } = gridSize;
+            const { depthPositions, widthPositions } = calculateSlotPositions();
+            
+            const numLengthwise = columns - 1;
+            const numWidthwise = rows - 1;
+            
+            const spacing = 0.25;
+            
+            let totalWidth = 0;
+            let totalHeight = 0;
+            
+            if (numLengthwise > 0) {
+              totalWidth = Math.max(totalWidth, numLengthwise * depth + (numLengthwise - 1) * spacing);
+              totalHeight += height + spacing;
+            }
+            
+            if (numWidthwise > 0) {
+              totalWidth = Math.max(totalWidth, numWidthwise * width + (numWidthwise - 1) * spacing);
+              totalHeight += height;
+            }
+            
+            const svgWidth = convertFromInches(totalWidth);
+            const svgHeight = convertFromInches(totalHeight);
+            
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Divider Designer v1.0.1 - https://greylightmay.github.io -->\n`;
+            svg += `<svg width="${svgWidth}${units === 'mm' ? 'mm' : 'in'}" height="${svgHeight}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs>\n    <style>\n`;
+            svg += `      .cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }\n`;
+            svg += `    </style>\n  </defs>\n`;
+            
+            let currentY = 0;
+            
+            if (numLengthwise > 0) {
+              svg += `  <g id="vertical-dividers">\n`;
+              for (let i = 0; i < numLengthwise; i++) {
+                const x = i * (depth + spacing);
+                svg += `    <path d="${generateDividerPath(depth, height, depthPositions, true)}" transform="translate(${x}, ${currentY})" class="cut-line" />\n`;
+              }
+              svg += `  </g>\n`;
+              currentY += height + spacing;
+            }
+            
+            if (numWidthwise > 0) {
+              svg += `  <g id="horizontal-dividers">\n`;
+              for (let i = 0; i < numWidthwise; i++) {
+                const x = i * (width + spacing);
+                svg += `    <path d="${generateDividerPath(width, height, widthPositions, false)}" transform="translate(${x}, ${currentY})" class="cut-line" />\n`;
+              }
+              svg += `  </g>\n`;
+            }
+            
+            svg += `</svg>`;
+            return svg;
+          }, [containerDims, gridSize, calculateSlotPositions, materialThickness, units, convertFromInches]);
+
+          const downloadSVG = () => {
+            gtag('event', 'download_svg', {
+              'tool_name': 'divider_designer'
+            });
+            
+            const svgContent = generateSVG();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const sanitizedFilename = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'dividers';
+            link.download = `${sanitizedFilename}.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          const handleDimensionChange = (field, value) => {
+            const numValue = parseFloat(value);
+            if (isNaN(numValue) || numValue <= 0) return;
+            const inchValue = convertToInches(numValue);
+            setContainerDims(prev => ({ ...prev, [field]: inchValue }));
+          };
+
+          const handleThicknessChange = (value) => {
+            const numValue = parseFloat(value);
+            if (isNaN(numValue) || numValue <= 0) return;
+            setMaterialThickness(convertToInches(numValue));
+          };
+
+          const handleColumnMinChange = (index, value) => {
+            setColumnMins(prev => {
+              const newMins = [...prev];
+              newMins[index] = value;
+              return newMins;
+            });
+          };
+
+          const handleRowMinChange = (index, value) => {
+            setRowMins(prev => {
+              const newMins = [...prev];
+              newMins[index] = value;
+              return newMins;
+            });
+          };
+
+          const compartments = calculateCompartments();
+          const bedCheck = checkBedFit();
+          const numLengthwise = gridSize.columns - 1;
+          const numWidthwise = gridSize.rows - 1;
+          const totalPieces = numLengthwise + numWidthwise;
+
+          return (
+            <div className="max-w-7xl mx-auto p-6 bg-white">
+              <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Divider Designer</h1>
+              <p className="text-center text-gray-600 mb-1">Create interlocking divider grids for containers and game boxes</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v1.0.1</p>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Units</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'inches'} onChange={() => setUnits('inches')} className="mr-2" />
+                        <span>Inches</span>
+                      </label>
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'mm'} onChange={() => setUnits('mm')} className="mr-2" />
+                        <span>Millimeters</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Container Dimensions</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Interior Width ({units})</label>
+                        <input type="number" value={widthInput} onChange={(e) => { setWidthInput(e.target.value); handleDimensionChange('width', e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Interior Depth ({units})</label>
+                        <input type="number" value={depthInput} onChange={(e) => { setDepthInput(e.target.value); handleDimensionChange('depth', e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Divider Height ({units})</label>
+                        <input type="number" value={heightInput} onChange={(e) => { setHeightInput(e.target.value); handleDimensionChange('height', e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Tip: Leave room above dividers for rulebooks, game boards, or items that span multiple compartments.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Grid Size</h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Columns</label>
+                        <select value={gridSize.columns} onChange={(e) => setGridSize(prev => ({ ...prev, columns: parseInt(e.target.value) }))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                          {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                            <option key={n} value={n}>{n} ({n - 1} dividers)</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Rows</label>
+                        <select value={gridSize.rows} onChange={(e) => setGridSize(prev => ({ ...prev, rows: parseInt(e.target.value) }))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                          {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                            <option key={n} value={n}>{n} ({n - 1} dividers)</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Compartment Sizing</h2>
+                    <p className="text-sm text-gray-500 mb-4">Set minimum sizes (leave blank for flexible). Flexible compartments share remaining space equally.</p>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-600 mb-2">Column Minimums ({units})</label>
+                      <div className="grid grid-cols-5 gap-2">
+                        {columnMins.map((min, i) => (
+                          <input key={i} type="number" value={min} onChange={(e) => handleColumnMinChange(i, e.target.value)} placeholder="flex" step={units === 'mm' ? '1' : '0.125'} className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-5 gap-2 mt-1">
+                        {compartments.columnWidths.map((w, i) => (
+                          <span key={i} className="text-xs text-gray-500 text-center">{formatUnit(convertFromInches(w))}</span>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-2">Row Minimums ({units})</label>
+                      <div className="grid grid-cols-5 gap-2">
+                        {rowMins.map((min, i) => (
+                          <input key={i} type="number" value={min} onChange={(e) => handleRowMinChange(i, e.target.value)} placeholder="flex" step={units === 'mm' ? '1' : '0.125'} className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-5 gap-2 mt-1">
+                        {compartments.rowDepths.map((d, i) => (
+                          <span key={i} className="text-xs text-gray-500 text-center">{formatUnit(convertFromInches(d))}</span>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {(compartments.widthWarning || compartments.depthWarning) && (
+                      <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                        ⚠️ Minimums exceed available space!
+                      </div>
+                    )}
+                    {compartments.minSizeWarning && !compartments.widthWarning && !compartments.depthWarning && (
+                      <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-700">
+                        ⚠️ Some compartments are below minimum size (material thickness)
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Thickness</h2>
+                    <div className="mb-3">
+                      <select value={materialPreset} onChange={(e) => { setMaterialPreset(e.target.value); if (e.target.value !== 'custom') setCustomThickness(''); }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        {units === 'inches' ? (
+                          <>
+                            <option value="0.125">1/8" (0.125")</option>
+                            <option value="0.118">Nominal 1/8" (0.118")</option>
+                            <option value="0.25">1/4" (0.250")</option>
+                            <option value="0.236">Nominal 1/4" (0.236")</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="3.0">3.0mm</option>
+                            <option value="3.175">3.175mm (1/8")</option>
+                            <option value="6.0">6.0mm</option>
+                            <option value="6.35">6.35mm (1/4")</option>
+                          </>
+                        )}
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {materialPreset === 'custom' && (
+                      <div>
+                        <input type="number" value={customThickness} onChange={(e) => { setCustomThickness(e.target.value); handleThicknessChange(e.target.value); }} placeholder={`Enter thickness in ${units}`} step={units === 'mm' ? '0.1' : '0.001'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">Current: {formatUnit(convertFromInches(materialThickness))} {units}</p>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Summary</h2>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <p>Total compartments: {gridSize.columns * gridSize.rows}</p>
+                      <p>Vertical dividers: {numLengthwise}</p>
+                      <p>Horizontal dividers: {numWidthwise}</p>
+                      <p className="font-semibold">Total pieces: {totalPieces}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Size Check</h2>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Your Material or Laser Bed Size</label>
+                      <select value={bedPreset} onChange={(e) => { setBedPreset(e.target.value); if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x').map(Number); setBedSize({ width: w, height: h }); } }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        <option value="12x12">12" × 12"</option>
+                        <option value="12x20">12" × 20"</option>
+                        <option value="20x28">20" × 28"</option>
+                        <option value="24x36">24" × 36"</option>
+                        <option value="40x28">40" × 28"</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {bedPreset === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        <input type="number" placeholder="Width" value={customBedWidth} onChange={(e) => { setCustomBedWidth(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, width: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                        <input type="number" placeholder="Height" value={customBedHeight} onChange={(e) => { setCustomBedHeight(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, height: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <div className={`rounded p-3 border ${bedCheck.fits ? (bedCheck.tight ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200') : 'bg-red-50 border-red-200'}`}>
+                      <p className={`font-semibold ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-800' : 'text-green-800') : 'text-red-800'}`}>
+                        {bedCheck.fits ? (bedCheck.tight ? '⚠️ Tight fit - verify carefully' : '✅ All pieces fit') : '🚫 Won\'t fit!'}
+                      </p>
+                      <p className={`text-sm ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-700' : 'text-green-700') : 'text-red-700'}`}>
+                        Largest: {bedCheck.largest.width.toFixed(2)}" × {bedCheck.largest.height.toFixed(2)}" ({bedCheck.largest.name})
+                      </p>
+                      {!bedCheck.fits && (
+                        <p className="text-sm text-red-700">Your material/bed: {bedSize.width}" × {bedSize.height}"</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm">
+                    <h3 className="font-semibold text-gray-700 mb-2">🎨 SVG Color Guide</h3>
+                    <div className="space-y-1 text-gray-600">
+                      <p>🔴 Red = Cut lines</p>
+                      <p>🟢 Green = Labels (reference only)</p>
+                      <p>🔵 Blue = Scoring/line engraving</p>
+                      <p>⚫ Black = Raster/fill engraving</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Filename</h2>
+                    <div className="flex items-center">
+                      <input 
+                        type="text" 
+                        value={filename} 
+                        onChange={(e) => setFilename(e.target.value)} 
+                        placeholder="e.g., wingspan-token-tray" 
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-l" 
+                      />
+                      <span className="px-3 py-2 bg-gray-200 border border-l-0 border-gray-300 rounded-r text-gray-600">.svg</span>
+                    </div>
+                  </div>
+
+                  <button onClick={downloadSVG} className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+                    Download SVG File
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-700">Preview</h2>
+                    <select value={zoomLevel} onChange={(e) => setZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+                  
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '600px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                    <div className="text-center mb-4">
+                      <p className="text-sm text-gray-600 font-semibold">Top-Down Grid View</p>
+                      <p className="text-xs text-gray-500">Shows compartment layout with dimensions</p>
+                    </div>
+                    
+                    <svg 
+                      width={`${containerDims.width * 60 * zoomLevel}px`} 
+                      height={`${containerDims.depth * 60 * zoomLevel}px`} 
+                      viewBox={`0 0 ${containerDims.width} ${containerDims.depth}`} 
+                      style={{ background: '#f9fafb', display: 'block', margin: '0 auto' }}
+                    >
+                      <rect x="0" y="0" width={containerDims.width} height={containerDims.depth} fill="none" stroke="#3b82f6" strokeWidth="0.02" />
+                      
+                      {(() => {
+                        const elements = [];
+                        let yPos = 0;
+                        
+                        compartments.rowDepths.forEach((rowDepth, rowIndex) => {
+                          let xPos = 0;
+                          
+                          compartments.columnWidths.forEach((colWidth, colIndex) => {
+                            elements.push(
+                              <rect
+                                key={`comp-${rowIndex}-${colIndex}`}
+                                x={xPos}
+                                y={yPos}
+                                width={colWidth}
+                                height={rowDepth}
+                                fill="#f3e5ab"
+                                stroke="#d4a574"
+                                strokeWidth="0.01"
+                              />
+                            );
+                            
+                            const fontSize = Math.min(colWidth, rowDepth) * 0.15;
+                            if (fontSize > 0.05) {
+                              elements.push(
+                                <text
+                                  key={`label-${rowIndex}-${colIndex}`}
+                                  x={xPos + colWidth / 2}
+                                  y={yPos + rowDepth / 2}
+                                  textAnchor="middle"
+                                  dominantBaseline="middle"
+                                  fontSize={fontSize}
+                                  fill="#666"
+                                >
+                                  {formatUnit(convertFromInches(colWidth))}×{formatUnit(convertFromInches(rowDepth))}
+                                </text>
+                              );
+                            }
+                            
+                            xPos += colWidth + materialThickness;
+                          });
+                          
+                          yPos += rowDepth + materialThickness;
+                        });
+                        
+                        let cumWidth = 0;
+                        for (let i = 0; i < gridSize.columns - 1; i++) {
+                          cumWidth += compartments.columnWidths[i];
+                          elements.push(
+                            <rect
+                              key={`div-v-${i}`}
+                              x={cumWidth}
+                              y={0}
+                              width={materialThickness}
+                              height={containerDims.depth}
+                              fill="#8b5a2b"
+                            />
+                          );
+                          cumWidth += materialThickness;
+                        }
+                        
+                        let cumDepth = 0;
+                        for (let i = 0; i < gridSize.rows - 1; i++) {
+                          cumDepth += compartments.rowDepths[i];
+                          elements.push(
+                            <rect
+                              key={`div-h-${i}`}
+                              x={0}
+                              y={cumDepth}
+                              width={containerDims.width}
+                              height={materialThickness}
+                              fill="#8b5a2b"
+                            />
+                          );
+                          cumDepth += materialThickness;
+                        }
+                        
+                        return elements;
+                      })()}
+                    </svg>
+                  </div>
+                  
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p><strong>Assembly:</strong></p>
+                    <p>• Vertical dividers have slots from TOP</p>
+                    <p>• Horizontal dividers have slots from BOTTOM</p>
+                    <p>• Pieces interlock without glue</p>
+                    <p>• All pieces of same orientation are identical</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<DividerDesigner />, document.getElementById('root'));
+    </script>
+</body>
+</html>

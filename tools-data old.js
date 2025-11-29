@@ -29,7 +29,7 @@ const toolsData = [
       "Real-time preview with zoom"
     ],
     imageOverlay: "Perfect hinges every time →",
-    fallbackEmoji: "🔓"
+    fallbackEmoji: "📐"
   },
   {
     id: "candle-shade",
@@ -85,35 +85,6 @@ const toolsData = [
       "Material and bed size checker"
     ],
     imageOverlay: "Build custom boxes in seconds →",
-    fallbackEmoji: "📦"
-  },
-  {
-    id: "divider-designer",
-    name: "Divider Designer",
-    subtitle: "Custom interlocking dividers for organizing boxes",
-    description: "Create custom standalone laser-cut dividers with interlocking joints. Perfect for dividing up space in boxes or drawers.",
-    image: "img/wingspan-insert.jpg",
-    imageAlt: "Laser-cut dividers for custom box inserts",
-    link: "divider-designer.html",
-    videoId: "9c71lOW8Zwk",
-    videoTitle: "Divider Designer",
-    colorScheme: {
-      gradient: "linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)",
-      background: "#115e59",
-      featureBox: "#f0fdfa",
-      featureTitle: "#115e59",
-      featureText: "#0f766e",
-      subtitleText: "#ccfbf1",
-      buttonGradient: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)"
-    },
-    features: [
-      "Cross-lap joinery - interlocks without glue",
-      "Flexible compartment sizing (set minimums or auto-distribute)",
-      "Perfect for game box inserts and drawer organizers",
-      "Material thickness presets (1/8\", 1/4\", metric)",
-      "Material and bed size checker"
-    ],
-    imageOverlay: "Build custom dividers in seconds →",
     fallbackEmoji: "📦"
   }
 ];
