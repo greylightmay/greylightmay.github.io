@@ -115,5 +115,33 @@ const toolsData = [
     ],
     imageOverlay: "Build custom dividers in seconds →",
     fallbackEmoji: "📦"
+  },
+  {
+    id: "card-box",
+    name: "Card Box Designer",
+    subtitle: "Card storage boxes with integrated dividers",
+    description: "Create custom card storage boxes with fixed dividers and flexible movable dividers. Perfect for organizing playing cards, trading cards, and game components.",
+    image: "img/card-box.jpg",
+    imageAlt: "Laser-cut card storage box with dividers",
+    link: "card-box-designer.html",
+    videoId: "c6c1s7iRd8s",
+    videoTitle: "Card Box Designer",
+    colorScheme: {
+      gradient: "linear-gradient(135deg, #e11d48 0%, #be123c 100%)",
+      background: "#881337",
+      featureBox: "#fff1f2",
+      featureTitle: "#881337",
+      featureText: "#be123c",
+      subtitleText: "#fecdd3",
+      buttonGradient: "linear-gradient(135deg, #be123c 0%, #9f1239 100%)"
+    },
+    features: [
+      "Inside-out design - specify number and width of columns",
+      "Fixed dividers with slots for flexible dividers",
+      "3 flexible divider templates with ID tabs",
+      "Standard tab-and-notch box construction"
+    ],
+    imageOverlay: "Organize your cards perfectly →",
+    fallbackEmoji: "🃏"
   }
 ];

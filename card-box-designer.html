@@ -1,0 +1,1635 @@
+<!--
+  Tool: Card Box Designer
+  Version: v1.0.0
+  Last Updated: December 19, 2025
+  Author: GreyLightMay
+  Website: https://greylightmay.com
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Box Designer v1.0.0</title>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
+    <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+
+        const CardBoxDesigner = () => {
+          // Units
+          const [units, setUnits] = useState('inches');
+
+          // Column configuration (inside-out design)
+          const [columnWidth, setColumnWidth] = useState(2.5); // Interior width of each column
+          const [numColumns, setNumColumns] = useState(4);
+
+          // Box dimensions
+          const [interiorDepth, setInteriorDepth] = useState(4); // Front to back
+          const [interiorHeight, setInteriorHeight] = useState(4); // Wall height
+
+          // Material
+          const [materialThickness, setMaterialThickness] = useState(0.125);
+          const [materialPreset, setMaterialPreset] = useState('0.125');
+
+          // Fixed divider settings
+          const [dividerHeight, setDividerHeight] = useState(3.5); // Height of fixed dividers (default: poker card height)
+          const [slotSpacing, setSlotSpacing] = useState(1); // Distance between slots on top edge
+          const [slotDepth, setSlotDepth] = useState(1.5); // How deep slots are cut from top
+
+          // Flexible divider settings
+          const [topTabHeight, setTopTabHeight] = useState(0.5);
+          const [cornerRadius, setCornerRadius] = useState(0.125);
+          const [flexDividerClearance, setFlexDividerClearance] = useState(0.05); // Total clearance (both sides)
+
+          // Lid settings
+          const [includeLid, setIncludeLid] = useState(true);
+          const [lidHeight, setLidHeight] = useState(1); // Lid wall height
+          const [lidClearance, setLidClearance] = useState(0.03); // Clearance per side for fit
+
+          // Bed size
+          const [bedSize, setBedSize] = useState({ width: 12, height: 20 });
+          const [bedPreset, setBedPreset] = useState('12x20');
+
+          // UI state
+          const [zoomLevel, setZoomLevel] = useState(1);
+          const [boxZoomLevel, setBoxZoomLevel] = useState(0.5);
+          const [lidZoomLevel, setLidZoomLevel] = useState(0.5);
+          const [filename, setFilename] = useState('card-box');
+
+          // Input display states
+          const [columnWidthInput, setColumnWidthInput] = useState('2.5');
+          const [depthInput, setDepthInput] = useState('4');
+          const [heightInput, setHeightInput] = useState('4');
+          const [slotSpacingInput, setSlotSpacingInput] = useState('1');
+          const [slotDepthInput, setSlotDepthInput] = useState('1.5');
+          const [topTabHeightInput, setTopTabHeightInput] = useState('0.5');
+          const [cornerRadiusInput, setCornerRadiusInput] = useState('0.125');
+          const [dividerHeightInput, setDividerHeightInput] = useState('3.5');
+          const [lidHeightInput, setLidHeightInput] = useState('1');
+          const [lidClearanceInput, setLidClearanceInput] = useState('0.03');
+          const [flexDividerClearanceInput, setFlexDividerClearanceInput] = useState('0.05');
+          const [customThickness, setCustomThickness] = useState('');
+          const [customBedWidth, setCustomBedWidth] = useState('');
+          const [customBedHeight, setCustomBedHeight] = useState('');
+
+          // Unit conversion utilities
+          const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
+          const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
+          const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+
+          // Update display inputs when units change
+          useEffect(() => {
+            setColumnWidthInput(formatUnit(convertFromInches(columnWidth)));
+            setDepthInput(formatUnit(convertFromInches(interiorDepth)));
+            setHeightInput(formatUnit(convertFromInches(interiorHeight)));
+            setSlotSpacingInput(formatUnit(convertFromInches(slotSpacing)));
+            setSlotDepthInput(formatUnit(convertFromInches(slotDepth)));
+            setTopTabHeightInput(formatUnit(convertFromInches(topTabHeight)));
+            setCornerRadiusInput(formatUnit(convertFromInches(cornerRadius)));
+            setDividerHeightInput(formatUnit(convertFromInches(dividerHeight)));
+            setLidHeightInput(formatUnit(convertFromInches(lidHeight)));
+            setLidClearanceInput(formatUnit(convertFromInches(lidClearance)));
+            setFlexDividerClearanceInput(formatUnit(convertFromInches(flexDividerClearance)));
+          }, [units]);
+
+          // Material preset handling
+          useEffect(() => {
+            if (materialPreset === 'custom') return;
+            const presets = units === 'inches'
+              ? { '0.125': 0.125, '0.25': 0.25, '0.118': 0.118, '0.236': 0.236 }
+              : { '3.0': 3.0 / 25.4, '6.0': 6.0 / 25.4, '3.175': 3.175 / 25.4, '6.35': 6.35 / 25.4 };
+            setMaterialThickness(presets[materialPreset] || 0.125);
+          }, [materialPreset, units]);
+
+          // Calculate box dimensions (inside-out)
+          const calculateDimensions = useCallback(() => {
+            // Interior width = columns + interior dividers
+            const interiorWidth = (columnWidth * numColumns) + (materialThickness * (numColumns - 1));
+
+            // Exterior width = interior + edge dividers + walls
+            const exteriorWidth = interiorWidth + (2 * materialThickness) + (2 * materialThickness);
+
+            // Exterior depth and height
+            const exteriorDepth = interiorDepth + (2 * materialThickness);
+            const exteriorHeight = interiorHeight + materialThickness;
+
+            // Number of fixed dividers
+            const numDividers = numColumns + 1;
+
+            // Flexible divider width (with user-configurable clearance)
+            const flexDividerWidth = columnWidth - flexDividerClearance;
+
+            return {
+              interiorWidth,
+              exteriorWidth,
+              interiorDepth,
+              exteriorDepth,
+              interiorHeight,
+              exteriorHeight,
+              numDividers,
+              flexDividerWidth,
+              columnWidth
+            };
+          }, [columnWidth, numColumns, interiorDepth, interiorHeight, materialThickness, flexDividerClearance]);
+
+          const dims = calculateDimensions();
+
+          // Calculate divider positions (center of each divider)
+          const getDividerPositions = useCallback(() => {
+            const positions = [];
+            // First divider is at edge (close to left wall)
+            let x = materialThickness; // Left wall thickness
+            positions.push(x + materialThickness / 2); // Center of first divider
+
+            for (let i = 0; i < numColumns; i++) {
+              x += materialThickness + columnWidth; // Divider + column
+              positions.push(x + materialThickness / 2); // Center of divider
+            }
+            return positions;
+          }, [numColumns, columnWidth, materialThickness]);
+
+          // Tab width for joints
+          const tabWidth = 0.5;
+
+          // Generate tab positions for an edge
+          const generateTabPositions = (edgeLength, numTabs) => {
+            const spacing = edgeLength / numTabs;
+            const positions = [];
+            for (let i = 0; i < numTabs; i++) {
+              const center = (i + 0.5) * spacing;
+              positions.push({
+                start: center - tabWidth / 2,
+                end: center + tabWidth / 2
+              });
+            }
+            return positions;
+          };
+
+          // Calculate tab count based on edge length (minimum 1 for short edges like lid walls)
+          const calculateTabCount = (edgeLength) => Math.max(1, Math.ceil(edgeLength / 2));
+
+          // Generate path for front/back wall with divider slots
+          const generateFrontBackWall = useCallback((width, height, dividerSlotPositions, dividerHt) => {
+            const tabDepth = materialThickness;
+
+            // Tab counts
+            const bottomTabCount = calculateTabCount(width);
+            const sideTabCount = calculateTabCount(height);
+
+            // Divider tab positions (2 per divider - upper and lower)
+            // These must match the tab positions on the fixed dividers (based on divider height, not wall height)
+            // Slots are positioned from the BOTTOM of the wall to match where dividers sit
+            const bottomOffset = height - dividerHt; // How much taller the wall is than the divider
+            const upperSlotY = bottomOffset + dividerHt * 0.25; // 25% down from divider top
+            const lowerSlotY = bottomOffset + dividerHt * 0.75; // 75% down from divider top
+
+            let path = `M 0 0`;
+
+            // Top edge (plain)
+            path += ` L ${width} 0`;
+
+            // Right edge with notches for right wall tabs
+            const rightNotches = generateTabPositions(height, sideTabCount);
+            rightNotches.forEach(notch => {
+              path += ` L ${width} ${notch.start}`;
+              path += ` L ${width - tabDepth} ${notch.start}`;
+              path += ` L ${width - tabDepth} ${notch.end}`;
+              path += ` L ${width} ${notch.end}`;
+            });
+            path += ` L ${width} ${height}`;
+
+            // Bottom edge with tabs
+            const bottomTabs = generateTabPositions(width, bottomTabCount);
+            for (let i = bottomTabs.length - 1; i >= 0; i--) {
+              const tab = bottomTabs[i];
+              path += ` L ${tab.end} ${height}`;
+              path += ` L ${tab.end} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height}`;
+            }
+            path += ` L 0 ${height}`;
+
+            // Left edge with notches for left wall tabs
+            const leftNotches = generateTabPositions(height, sideTabCount);
+            for (let i = leftNotches.length - 1; i >= 0; i--) {
+              const notch = leftNotches[i];
+              path += ` L 0 ${notch.end}`;
+              path += ` L ${tabDepth} ${notch.end}`;
+              path += ` L ${tabDepth} ${notch.start}`;
+              path += ` L 0 ${notch.start}`;
+            }
+            path += ` L 0 0 Z`;
+
+            // Add divider slots (2 per divider) - VERTICAL slots
+            // Slots are material thickness wide, tabWidth (0.5") tall
+            let slots = '';
+            dividerSlotPositions.forEach(xPos => {
+              // Upper slot - vertical (materialThickness wide, tabWidth tall)
+              const slotLeft = xPos - tabDepth / 2;
+              const slotRight = xPos + tabDepth / 2;
+              slots += ` M ${slotLeft} ${upperSlotY - tabWidth / 2}`;
+              slots += ` L ${slotRight} ${upperSlotY - tabWidth / 2}`;
+              slots += ` L ${slotRight} ${upperSlotY + tabWidth / 2}`;
+              slots += ` L ${slotLeft} ${upperSlotY + tabWidth / 2}`;
+              slots += ` Z`;
+
+              // Lower slot - vertical (materialThickness wide, tabWidth tall)
+              slots += ` M ${slotLeft} ${lowerSlotY - tabWidth / 2}`;
+              slots += ` L ${slotRight} ${lowerSlotY - tabWidth / 2}`;
+              slots += ` L ${slotRight} ${lowerSlotY + tabWidth / 2}`;
+              slots += ` L ${slotLeft} ${lowerSlotY + tabWidth / 2}`;
+              slots += ` Z`;
+            });
+
+            return path + slots;
+          }, [materialThickness, tabWidth, calculateTabCount, generateTabPositions]);
+
+          // Generate path for left/right wall (tabs on all connecting edges)
+          const generateSideWall = useCallback((width, height) => {
+            const tabDepth = materialThickness;
+
+            const topTabCount = calculateTabCount(width);
+            const bottomTabCount = calculateTabCount(width);
+            const frontBackTabCount = calculateTabCount(height);
+
+            let path = `M 0 0`;
+
+            // Top edge (plain - open box)
+            path += ` L ${width} 0`;
+
+            // Right edge with tabs (into back wall)
+            const rightTabs = generateTabPositions(height, frontBackTabCount);
+            rightTabs.forEach(tab => {
+              path += ` L ${width} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.end}`;
+              path += ` L ${width} ${tab.end}`;
+            });
+            path += ` L ${width} ${height}`;
+
+            // Bottom edge with tabs
+            const bottomTabs = generateTabPositions(width, bottomTabCount);
+            for (let i = bottomTabs.length - 1; i >= 0; i--) {
+              const tab = bottomTabs[i];
+              path += ` L ${tab.end} ${height}`;
+              path += ` L ${tab.end} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height}`;
+            }
+            path += ` L 0 ${height}`;
+
+            // Left edge with tabs (into front wall)
+            const leftTabs = generateTabPositions(height, frontBackTabCount);
+            for (let i = leftTabs.length - 1; i >= 0; i--) {
+              const tab = leftTabs[i];
+              path += ` L 0 ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.start}`;
+              path += ` L 0 ${tab.start}`;
+            }
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness, calculateTabCount, generateTabPositions]);
+
+          // Generate bottom piece with notches on all edges
+          const generateBottom = useCallback((width, depth, sideWallWidth) => {
+            const tabDepth = materialThickness;
+
+            const widthNotchCount = calculateTabCount(width);
+            // Use sideWallWidth for notch count to match side wall tabs
+            const depthNotchCount = calculateTabCount(sideWallWidth);
+
+            let path = `M 0 0`;
+
+            // Top edge with notches (for back wall)
+            const topNotches = generateTabPositions(width, widthNotchCount);
+            topNotches.forEach(notch => {
+              path += ` L ${notch.start} 0`;
+              path += ` L ${notch.start} ${tabDepth}`;
+              path += ` L ${notch.end} ${tabDepth}`;
+              path += ` L ${notch.end} 0`;
+            });
+            path += ` L ${width} 0`;
+
+            // Right edge with notches (for right wall)
+            // Distribute notches across sideWallWidth to match side wall tab positions
+            // Then offset by materialThickness since bottom is exteriorDepth but side wall body is sideWallWidth
+            const rightNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+            rightNotches.forEach(notch => {
+              const offsetStart = notch.start + materialThickness;
+              const offsetEnd = notch.end + materialThickness;
+              path += ` L ${width} ${offsetStart}`;
+              path += ` L ${width - tabDepth} ${offsetStart}`;
+              path += ` L ${width - tabDepth} ${offsetEnd}`;
+              path += ` L ${width} ${offsetEnd}`;
+            });
+            path += ` L ${width} ${depth}`;
+
+            // Bottom edge with notches (for front wall)
+            const bottomNotches = generateTabPositions(width, widthNotchCount);
+            for (let i = bottomNotches.length - 1; i >= 0; i--) {
+              const notch = bottomNotches[i];
+              path += ` L ${notch.end} ${depth}`;
+              path += ` L ${notch.end} ${depth - tabDepth}`;
+              path += ` L ${notch.start} ${depth - tabDepth}`;
+              path += ` L ${notch.start} ${depth}`;
+            }
+            path += ` L 0 ${depth}`;
+
+            // Left edge with notches (for left wall)
+            // Distribute notches across sideWallWidth to match side wall tab positions
+            // Then offset by materialThickness since bottom is exteriorDepth but side wall body is sideWallWidth
+            const leftNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+            for (let i = leftNotches.length - 1; i >= 0; i--) {
+              const notch = leftNotches[i];
+              const offsetStart = notch.start + materialThickness;
+              const offsetEnd = notch.end + materialThickness;
+              path += ` L 0 ${offsetEnd}`;
+              path += ` L ${tabDepth} ${offsetEnd}`;
+              path += ` L ${tabDepth} ${offsetStart}`;
+              path += ` L 0 ${offsetStart}`;
+            }
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness, calculateTabCount, generateTabPositions]);
+
+          // Generate fixed divider with tabs on front/back, slots on top
+          const generateFixedDivider = useCallback((depth, height) => {
+            const tabDepth = materialThickness;
+
+            // 2 tabs on each end (front and back), evenly spaced
+            // Tabs are 0.5" wide (tabWidth) and materialThickness deep
+            const tabY1 = height * 0.25;
+            const tabY2 = height * 0.75;
+
+            // Calculate number of slots on top - slots are materialThickness wide
+            const numSlots = Math.floor(depth / slotSpacing);
+            const actualSpacing = depth / (numSlots + 1);
+
+            let path = `M 0 0`;
+
+            // Top edge with slots for flexible dividers (materialThickness wide)
+            for (let i = 1; i <= numSlots; i++) {
+              const slotX = i * actualSpacing;
+              path += ` L ${slotX - materialThickness / 2} 0`;
+              path += ` L ${slotX - materialThickness / 2} ${slotDepth}`;
+              path += ` L ${slotX + materialThickness / 2} ${slotDepth}`;
+              path += ` L ${slotX + materialThickness / 2} 0`;
+            }
+            path += ` L ${depth} 0`;
+
+            // Right edge (back) with 2 tabs - tabs are tabWidth (0.5") tall, materialThickness deep
+            path += ` L ${depth} ${tabY1 - tabWidth / 2}`;
+            path += ` L ${depth + tabDepth} ${tabY1 - tabWidth / 2}`;
+            path += ` L ${depth + tabDepth} ${tabY1 + tabWidth / 2}`;
+            path += ` L ${depth} ${tabY1 + tabWidth / 2}`;
+            path += ` L ${depth} ${tabY2 - tabWidth / 2}`;
+            path += ` L ${depth + tabDepth} ${tabY2 - tabWidth / 2}`;
+            path += ` L ${depth + tabDepth} ${tabY2 + tabWidth / 2}`;
+            path += ` L ${depth} ${tabY2 + tabWidth / 2}`;
+            path += ` L ${depth} ${height}`;
+
+            // Bottom edge (plain - rests on bottom)
+            path += ` L 0 ${height}`;
+
+            // Left edge (front) with 2 tabs - tabs are tabWidth (0.5") tall, materialThickness deep
+            path += ` L 0 ${tabY2 + tabWidth / 2}`;
+            path += ` L ${-tabDepth} ${tabY2 + tabWidth / 2}`;
+            path += ` L ${-tabDepth} ${tabY2 - tabWidth / 2}`;
+            path += ` L 0 ${tabY2 - tabWidth / 2}`;
+            path += ` L 0 ${tabY1 + tabWidth / 2}`;
+            path += ` L ${-tabDepth} ${tabY1 + tabWidth / 2}`;
+            path += ` L ${-tabDepth} ${tabY1 - tabWidth / 2}`;
+            path += ` L 0 ${tabY1 - tabWidth / 2}`;
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness, slotSpacing, slotDepth, tabWidth]);
+
+          // Generate flexible divider with side tabs at top and identification tab
+          const generateFlexibleDivider = useCallback((width, height, tabPosition) => {
+            const sideTabWidth = materialThickness; // How far tabs stick out (into slots)
+            const sideTabHeight = slotDepth; // Height of side tabs (matches slot depth)
+            const idTabWidth = 1.0; // ID tab width
+            const idTabHeight = 0.5; // ID tab height
+            const r = cornerRadius; // Rounded corners on ID tab
+
+            // Calculate ID tab X position (3 positions: 0=left, 1=center, 2=right)
+            const margin = 0.25; // Space from edge to tab
+            const positions = [
+              margin, // Left
+              (width - idTabWidth) / 2, // Center
+              width - idTabWidth - margin // Right
+            ];
+            const idTabX = positions[tabPosition];
+
+            let path = '';
+
+            // Start from bottom-left corner, go clockwise
+            path = `M 0 ${height}`;
+
+            // Left edge going up
+            path += ` L 0 ${sideTabHeight}`;
+
+            // Left side tab (at top, sticking out left)
+            path += ` L ${-sideTabWidth} ${sideTabHeight}`;
+            path += ` L ${-sideTabWidth} 0`;
+            path += ` L 0 0`;
+
+            // Top edge with ID tab
+            // Go to ID tab position
+            path += ` L ${idTabX} 0`;
+            // Draw ID tab with rounded top corners
+            path += ` L ${idTabX} ${-idTabHeight + r}`;
+            path += ` A ${r} ${r} 0 0 1 ${idTabX + r} ${-idTabHeight}`;
+            path += ` L ${idTabX + idTabWidth - r} ${-idTabHeight}`;
+            path += ` A ${r} ${r} 0 0 1 ${idTabX + idTabWidth} ${-idTabHeight + r}`;
+            path += ` L ${idTabX + idTabWidth} 0`;
+            // Continue to right edge
+            path += ` L ${width} 0`;
+
+            // Right side tab (at top, sticking out right)
+            path += ` L ${width + sideTabWidth} 0`;
+            path += ` L ${width + sideTabWidth} ${sideTabHeight}`;
+            path += ` L ${width} ${sideTabHeight}`;
+
+            // Right edge going down
+            path += ` L ${width} ${height}`;
+
+            // Bottom edge back to start
+            path += ` L 0 ${height}`;
+            path += ` Z`;
+
+            return path;
+          }, [slotDepth, materialThickness, cornerRadius]);
+
+          // Check if pieces fit on bed
+          const checkBedFit = useCallback(() => {
+            const pieces = [
+              { name: 'Front/Back wall', width: dims.exteriorWidth, height: dims.interiorHeight },
+              { name: 'Left/Right wall', width: dims.exteriorDepth, height: dims.interiorHeight },
+              { name: 'Bottom', width: dims.exteriorWidth, height: dims.exteriorDepth },
+              { name: 'Fixed divider', width: dims.exteriorDepth, height: dividerHeight }
+            ];
+
+            const largest = pieces.reduce((max, p) =>
+              (p.width * p.height > max.width * max.height) ? p : max
+            );
+
+            const fitsNormal = largest.width <= bedSize.width && largest.height <= bedSize.height;
+            const fitsRotated = largest.height <= bedSize.width && largest.width <= bedSize.height;
+            const fits = fitsNormal || fitsRotated;
+            const tight = fits && (
+              Math.min(bedSize.width - largest.width, bedSize.height - largest.height) < 0.5 ||
+              Math.min(bedSize.width - largest.height, bedSize.height - largest.width) < 0.5
+            );
+
+            return { fits, tight, largest };
+          }, [dims, bedSize, dividerHeight]);
+
+          // Generate SVG for box and fixed dividers
+          const generateBoxSVG = useCallback(() => {
+            const spacing = 0.25;
+
+            // Get divider slot positions for front/back walls
+            const dividerPositions = [];
+            let x = materialThickness; // Start after left wall
+            for (let i = 0; i <= numColumns; i++) {
+              dividerPositions.push(x + materialThickness / 2);
+              x += materialThickness + columnWidth;
+            }
+
+            // Wall dimensions
+            const frontBackWidth = dims.exteriorWidth;
+            const frontBackHeight = dims.interiorHeight;
+            const sideWidth = dims.interiorDepth; // Interior depth - tabs add material thickness on each side
+            const sideHeight = dims.interiorHeight;
+            const bottomWidth = dims.exteriorWidth;
+            const bottomDepth = dims.exteriorDepth; // Exterior - notches cut inward, don't reduce size
+            const dividerDepth = dims.interiorDepth;
+            const fixedDividerHeight = dividerHeight; // Use the state variable for divider height
+
+            // Calculate bounding boxes (accounting for tabs)
+            const frontBackBBox = { w: frontBackWidth, h: frontBackHeight + materialThickness };
+            const sideBBox = { w: sideWidth + 2 * materialThickness, h: sideHeight + materialThickness };
+            const bottomBBox = { w: bottomWidth, h: bottomDepth };
+            const dividerBBox = { w: dividerDepth + 2 * materialThickness, h: fixedDividerHeight };
+
+            // Layout
+            const row1Width = frontBackBBox.w + spacing + frontBackBBox.w;
+            const row1Height = frontBackBBox.h;
+
+            const row2Width = sideBBox.w + spacing + sideBBox.w + spacing + bottomBBox.w;
+            const row2Height = Math.max(sideBBox.h, bottomBBox.h);
+
+            const dividersPerRow = Math.min(dims.numDividers, Math.floor((Math.max(row1Width, row2Width)) / (dividerBBox.w + spacing)));
+            const dividerRows = Math.ceil(dims.numDividers / dividersPerRow);
+            const row3Width = dividersPerRow * dividerBBox.w + (dividersPerRow - 1) * spacing;
+            const row3Height = dividerRows * dividerBBox.h + (dividerRows - 1) * spacing;
+
+            const totalWidth = Math.max(row1Width, row2Width, row3Width);
+            const totalHeight = row1Height + spacing + row2Height + spacing + row3Height;
+
+            const svgWidth = convertFromInches(totalWidth);
+            const svgHeight = convertFromInches(totalHeight);
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Card Box Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<svg width="${svgWidth}${units === 'mm' ? 'mm' : 'in'}" height="${svgHeight}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs>\n    <style>\n`;
+            svg += `      .cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }\n`;
+            svg += `    </style>\n  </defs>\n`;
+
+            let currentY = 0;
+
+            // Row 1: Front and Back walls
+            svg += `  <g id="front-wall" transform="translate(0, 0)">\n`;
+            svg += `    <path d="${generateFrontBackWall(frontBackWidth, frontBackHeight, dividerPositions, fixedDividerHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="back-wall" transform="translate(${frontBackBBox.w + spacing}, 0)">\n`;
+            svg += `    <path d="${generateFrontBackWall(frontBackWidth, frontBackHeight, dividerPositions, fixedDividerHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            currentY += row1Height + spacing;
+
+            // Row 2: Left wall, Right wall, Bottom
+            svg += `  <g id="left-wall" transform="translate(${materialThickness}, ${currentY})">\n`;
+            svg += `    <path d="${generateSideWall(sideWidth, sideHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="right-wall" transform="translate(${sideBBox.w + spacing + materialThickness}, ${currentY})">\n`;
+            svg += `    <path d="${generateSideWall(sideWidth, sideHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="bottom" transform="translate(${sideBBox.w + spacing + sideBBox.w + spacing}, ${currentY})">\n`;
+            svg += `    <path d="${generateBottom(bottomWidth, bottomDepth, sideWidth)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            currentY += row2Height + spacing;
+
+            // Row 3+: Fixed dividers
+            svg += `  <g id="fixed-dividers">\n`;
+            for (let i = 0; i < dims.numDividers; i++) {
+              const row = Math.floor(i / dividersPerRow);
+              const col = i % dividersPerRow;
+              const dx = col * (dividerBBox.w + spacing) + materialThickness;
+              const dy = currentY + row * (dividerBBox.h + spacing);
+              svg += `    <path d="${generateFixedDivider(dividerDepth, fixedDividerHeight)}" transform="translate(${dx}, ${dy})" class="cut-line" />\n`;
+            }
+            svg += `  </g>\n`;
+
+            svg += `</svg>`;
+            return svg;
+          }, [dims, numColumns, columnWidth, materialThickness, units, convertFromInches, generateFrontBackWall, generateSideWall, generateBottom, generateFixedDivider, dividerHeight]);
+
+          // Generate SVG for flexible divider templates
+          const generateFlexibleDividersSVG = useCallback(() => {
+            const spacing = 0.25;
+            const flexDividerWidth = dims.flexDividerWidth;
+            const flexDividerHeight = dividerHeight; // Full height of fixed divider (side tabs hang into slots, ID tab sticks up)
+            const idTabHeight = 0.5; // ID tab height
+
+            // 3 templates, each with side tabs (materialThickness wide)
+            const totalWidth = 3 * (flexDividerWidth + 2 * materialThickness) + 2 * spacing;
+            const totalHeight = flexDividerHeight + idTabHeight; // Body + ID tab sticking up
+
+            const svgWidth = convertFromInches(totalWidth);
+            const svgHeight = convertFromInches(totalHeight);
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Card Box Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<!-- Flexible Divider Templates - Cut from colorful material, duplicate as needed -->\n`;
+            svg += `<svg width="${svgWidth}${units === 'mm' ? 'mm' : 'in'}" height="${svgHeight}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs>\n    <style>\n`;
+            svg += `      .cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }\n`;
+            svg += `    </style>\n  </defs>\n`;
+
+            // 3 templates with ID tabs at different positions (left, center, right)
+            for (let i = 0; i < 3; i++) {
+              const dx = i * (flexDividerWidth + 2 * materialThickness + spacing) + materialThickness;
+              const dy = idTabHeight;
+              svg += `  <g id="flex-divider-${i + 1}" transform="translate(${dx}, ${dy})">\n`;
+              svg += `    <path d="${generateFlexibleDivider(flexDividerWidth, flexDividerHeight, i)}" class="cut-line" />\n`;
+              svg += `  </g>\n`;
+            }
+
+            svg += `</svg>`;
+            return svg;
+          }, [dims, slotDepth, materialThickness, units, convertFromInches, generateFlexibleDivider, dividerHeight]);
+
+          // Generate SVG for lid (5-sided box that fits over main box)
+          const generateLidSVG = useCallback(() => {
+            const spacing = 0.25;
+
+            // Lid interior dimensions = box exterior + clearance on each side
+            const lidInteriorWidth = dims.exteriorWidth + (2 * lidClearance);
+            const lidInteriorDepth = dims.exteriorDepth + (2 * lidClearance);
+
+            // Lid exterior dimensions
+            const lidExteriorWidth = lidInteriorWidth + (2 * materialThickness);
+            const lidExteriorDepth = lidInteriorDepth + (2 * materialThickness);
+
+            // Generate simple lid wall (tabs on bottom, plain top)
+            const generateLidFrontBack = (width, height) => {
+              const tabDepth = materialThickness;
+              const bottomTabCount = calculateTabCount(width);
+              const sideTabCount = calculateTabCount(height);
+
+              let path = `M 0 0`;
+
+              // Top edge (plain)
+              path += ` L ${width} 0`;
+
+              // Right edge with notches for side wall tabs
+              const rightNotches = generateTabPositions(height, sideTabCount);
+              rightNotches.forEach(notch => {
+                path += ` L ${width} ${notch.start}`;
+                path += ` L ${width - tabDepth} ${notch.start}`;
+                path += ` L ${width - tabDepth} ${notch.end}`;
+                path += ` L ${width} ${notch.end}`;
+              });
+              path += ` L ${width} ${height}`;
+
+              // Bottom edge with tabs (to connect to top piece)
+              const bottomTabs = generateTabPositions(width, bottomTabCount);
+              for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                const tab = bottomTabs[i];
+                path += ` L ${tab.end} ${height}`;
+                path += ` L ${tab.end} ${height + tabDepth}`;
+                path += ` L ${tab.start} ${height + tabDepth}`;
+                path += ` L ${tab.start} ${height}`;
+              }
+              path += ` L 0 ${height}`;
+
+              // Left edge with notches for side wall tabs
+              const leftNotches = generateTabPositions(height, sideTabCount);
+              for (let i = leftNotches.length - 1; i >= 0; i--) {
+                const notch = leftNotches[i];
+                path += ` L 0 ${notch.end}`;
+                path += ` L ${tabDepth} ${notch.end}`;
+                path += ` L ${tabDepth} ${notch.start}`;
+                path += ` L 0 ${notch.start}`;
+              }
+              path += ` L 0 0 Z`;
+
+              return path;
+            };
+
+            const generateLidSide = (width, height) => {
+              const tabDepth = materialThickness;
+              const bottomTabCount = calculateTabCount(width);
+              const frontBackTabCount = calculateTabCount(height);
+
+              let path = `M 0 0`;
+
+              // Top edge (plain)
+              path += ` L ${width} 0`;
+
+              // Right edge with tabs (into back wall)
+              const rightTabs = generateTabPositions(height, frontBackTabCount);
+              rightTabs.forEach(tab => {
+                path += ` L ${width} ${tab.start}`;
+                path += ` L ${width + tabDepth} ${tab.start}`;
+                path += ` L ${width + tabDepth} ${tab.end}`;
+                path += ` L ${width} ${tab.end}`;
+              });
+              path += ` L ${width} ${height}`;
+
+              // Bottom edge with tabs (to connect to top piece)
+              const bottomTabs = generateTabPositions(width, bottomTabCount);
+              for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                const tab = bottomTabs[i];
+                path += ` L ${tab.end} ${height}`;
+                path += ` L ${tab.end} ${height + tabDepth}`;
+                path += ` L ${tab.start} ${height + tabDepth}`;
+                path += ` L ${tab.start} ${height}`;
+              }
+              path += ` L 0 ${height}`;
+
+              // Left edge with tabs (into front wall)
+              const leftTabs = generateTabPositions(height, frontBackTabCount);
+              for (let i = leftTabs.length - 1; i >= 0; i--) {
+                const tab = leftTabs[i];
+                path += ` L 0 ${tab.end}`;
+                path += ` L ${-tabDepth} ${tab.end}`;
+                path += ` L ${-tabDepth} ${tab.start}`;
+                path += ` L 0 ${tab.start}`;
+              }
+              path += ` L 0 0 Z`;
+
+              return path;
+            };
+
+            const generateLidTop = (width, depth, sideWallWidth) => {
+              const tabDepth = materialThickness;
+              const widthNotchCount = calculateTabCount(width);
+              // Use sideWallWidth for notch count to match side wall tabs
+              const depthNotchCount = calculateTabCount(sideWallWidth);
+
+              let path = `M 0 0`;
+
+              // Top edge with notches (for back wall)
+              const topNotches = generateTabPositions(width, widthNotchCount);
+              topNotches.forEach(notch => {
+                path += ` L ${notch.start} 0`;
+                path += ` L ${notch.start} ${tabDepth}`;
+                path += ` L ${notch.end} ${tabDepth}`;
+                path += ` L ${notch.end} 0`;
+              });
+              path += ` L ${width} 0`;
+
+              // Right edge with notches (for right wall)
+              // Distribute notches across sideWallWidth to match side wall tab positions
+              // Then offset by materialThickness since top is exteriorDepth but side wall body is sideWallWidth
+              const rightNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+              rightNotches.forEach(notch => {
+                const offsetStart = notch.start + materialThickness;
+                const offsetEnd = notch.end + materialThickness;
+                path += ` L ${width} ${offsetStart}`;
+                path += ` L ${width - tabDepth} ${offsetStart}`;
+                path += ` L ${width - tabDepth} ${offsetEnd}`;
+                path += ` L ${width} ${offsetEnd}`;
+              });
+              path += ` L ${width} ${depth}`;
+
+              // Bottom edge with notches (for front wall)
+              const bottomNotches = generateTabPositions(width, widthNotchCount);
+              for (let i = bottomNotches.length - 1; i >= 0; i--) {
+                const notch = bottomNotches[i];
+                path += ` L ${notch.end} ${depth}`;
+                path += ` L ${notch.end} ${depth - tabDepth}`;
+                path += ` L ${notch.start} ${depth - tabDepth}`;
+                path += ` L ${notch.start} ${depth}`;
+              }
+              path += ` L 0 ${depth}`;
+
+              // Left edge with notches (for left wall)
+              // Distribute notches across sideWallWidth to match side wall tab positions
+              // Then offset by materialThickness since top is exteriorDepth but side wall body is sideWallWidth
+              const leftNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+              for (let i = leftNotches.length - 1; i >= 0; i--) {
+                const notch = leftNotches[i];
+                const offsetStart = notch.start + materialThickness;
+                const offsetEnd = notch.end + materialThickness;
+                path += ` L 0 ${offsetEnd}`;
+                path += ` L ${tabDepth} ${offsetEnd}`;
+                path += ` L ${tabDepth} ${offsetStart}`;
+                path += ` L 0 ${offsetStart}`;
+              }
+              path += ` L 0 0 Z`;
+
+              return path;
+            };
+
+            // Dimensions
+            const frontBackWidth = lidExteriorWidth;
+            const frontBackHeight = lidHeight;
+            const sideWidth = lidInteriorDepth; // Interior depth - tabs add material thickness on each side
+            const sideHeight = lidHeight;
+            const topWidth = lidExteriorWidth;
+            const topDepth = lidExteriorDepth; // Exterior - notches cut inward, don't reduce size
+
+            // Bounding boxes (accounting for tabs)
+            const frontBackBBox = { w: frontBackWidth, h: frontBackHeight + materialThickness };
+            const sideBBox = { w: sideWidth + 2 * materialThickness, h: sideHeight + materialThickness };
+            const topBBox = { w: topWidth, h: topDepth };
+
+            // Layout - 2 rows
+            const row1Width = frontBackBBox.w + spacing + frontBackBBox.w;
+            const row1Height = frontBackBBox.h;
+
+            const row2Width = sideBBox.w + spacing + sideBBox.w + spacing + topBBox.w;
+            const row2Height = Math.max(sideBBox.h, topBBox.h);
+
+            const totalWidth = Math.max(row1Width, row2Width);
+            const totalHeight = row1Height + spacing + row2Height;
+
+            const svgWidth = convertFromInches(totalWidth);
+            const svgHeight = convertFromInches(totalHeight);
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Card Box Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<!-- Lid - fits over main box with ${lidClearance.toFixed(3)}" clearance per side -->\n`;
+            svg += `<svg width="${svgWidth}${units === 'mm' ? 'mm' : 'in'}" height="${svgHeight}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs>\n    <style>\n`;
+            svg += `      .cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }\n`;
+            svg += `    </style>\n  </defs>\n`;
+
+            let currentY = 0;
+
+            // Row 1: Front and Back walls
+            svg += `  <g id="lid-front-wall" transform="translate(0, 0)">\n`;
+            svg += `    <path d="${generateLidFrontBack(frontBackWidth, frontBackHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="lid-back-wall" transform="translate(${frontBackBBox.w + spacing}, 0)">\n`;
+            svg += `    <path d="${generateLidFrontBack(frontBackWidth, frontBackHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            currentY += row1Height + spacing;
+
+            // Row 2: Left wall, Right wall, Top
+            svg += `  <g id="lid-left-wall" transform="translate(${materialThickness}, ${currentY})">\n`;
+            svg += `    <path d="${generateLidSide(sideWidth, sideHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="lid-right-wall" transform="translate(${sideBBox.w + spacing + materialThickness}, ${currentY})">\n`;
+            svg += `    <path d="${generateLidSide(sideWidth, sideHeight)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="lid-top" transform="translate(${sideBBox.w + spacing + sideBBox.w + spacing}, ${currentY})">\n`;
+            svg += `    <path d="${generateLidTop(topWidth, topDepth, sideWidth)}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `</svg>`;
+            return svg;
+          }, [dims, lidHeight, lidClearance, materialThickness, units, convertFromInches, calculateTabCount, generateTabPositions]);
+
+          // Download handlers
+          const downloadBoxSVG = () => {
+            gtag('event', 'download_svg', { 'tool_name': 'card_box_designer_box' });
+            const svgContent = generateBoxSVG();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const sanitizedFilename = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'card-box';
+            link.download = `${sanitizedFilename}-box.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          const downloadFlexibleDividersSVG = () => {
+            gtag('event', 'download_svg', { 'tool_name': 'card_box_designer_dividers' });
+            const svgContent = generateFlexibleDividersSVG();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const sanitizedFilename = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'card-box';
+            link.download = `${sanitizedFilename}-flex-dividers.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          const downloadLidSVG = () => {
+            gtag('event', 'download_svg', { 'tool_name': 'card_box_designer_lid' });
+            const svgContent = generateLidSVG();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const sanitizedFilename = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'card-box';
+            link.download = `${sanitizedFilename}-lid.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          // Input handlers
+          const handleColumnWidthChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setColumnWidth(convertToInches(numValue));
+            }
+          };
+
+          const handleDepthChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setInteriorDepth(convertToInches(numValue));
+            }
+          };
+
+          const handleHeightChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setInteriorHeight(convertToInches(numValue));
+            }
+          };
+
+          const handleSlotSpacingChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setSlotSpacing(convertToInches(numValue));
+            }
+          };
+
+          const handleSlotDepthChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setSlotDepth(convertToInches(numValue));
+            }
+          };
+
+          const handleTopTabHeightChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setTopTabHeight(convertToInches(numValue));
+            }
+          };
+
+          const handleCornerRadiusChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue >= 0) {
+              setCornerRadius(convertToInches(numValue));
+            }
+          };
+
+          const handleFlexDividerClearanceChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue >= 0) {
+              setFlexDividerClearance(convertToInches(numValue));
+            }
+          };
+
+          const handleDividerHeightChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setDividerHeight(convertToInches(numValue));
+            }
+          };
+
+          const handleThicknessChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setMaterialThickness(convertToInches(numValue));
+            }
+          };
+
+          const handleLidHeightChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              setLidHeight(convertToInches(numValue));
+            }
+          };
+
+          const handleLidClearanceChange = (value) => {
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue >= 0) {
+              setLidClearance(convertToInches(numValue));
+            }
+          };
+
+          const bedCheck = checkBedFit();
+
+          return (
+            <div className="max-w-7xl mx-auto p-6 bg-white">
+              <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Card Box Designer</h1>
+              <p className="text-center text-gray-600 mb-1">Create card storage boxes with integrated dividers</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v1.0.0</p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Settings Column */}
+                <div className="space-y-6">
+                  {/* Units */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Units</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'inches'} onChange={() => setUnits('inches')} className="mr-2" />
+                        <span>Inches</span>
+                      </label>
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'mm'} onChange={() => setUnits('mm')} className="mr-2" />
+                        <span>Millimeters</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Column Configuration */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Column Configuration</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Column Interior Width ({units})</label>
+                        <input type="number" value={columnWidthInput} onChange={(e) => { setColumnWidthInput(e.target.value); handleColumnWidthChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Tip: Poker/MTG cards are 2.5" (sleeved: ~2.75"), Bridge cards are 2.25"</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Number of Columns</label>
+                        <select value={numColumns} onChange={(e) => setNumColumns(parseInt(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                          {[2, 3, 4, 5, 6, 7, 8].map(n => (
+                            <option key={n} value={n}>{n} columns ({n + 1} fixed dividers)</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-sm text-gray-600">
+                        <strong>Calculated box width:</strong> {formatUnit(convertFromInches(dims.exteriorWidth))} {units} (exterior)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Box Dimensions */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Box Dimensions</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Interior Depth ({units})</label>
+                        <input type="number" value={depthInput} onChange={(e) => { setDepthInput(e.target.value); handleDepthChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Front to back interior space</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Interior Height ({units})</label>
+                        <input type="number" value={heightInput} onChange={(e) => { setHeightInput(e.target.value); handleHeightChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Tip: Poker cards are 3.5" tall</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Material Thickness */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Thickness</h2>
+                    <div className="mb-3">
+                      <select value={materialPreset} onChange={(e) => { setMaterialPreset(e.target.value); if (e.target.value !== 'custom') setCustomThickness(''); }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        {units === 'inches' ? (
+                          <>
+                            <option value="0.125">1/8" (0.125")</option>
+                            <option value="0.118">Nominal 1/8" (0.118")</option>
+                            <option value="0.25">1/4" (0.250")</option>
+                            <option value="0.236">Nominal 1/4" (0.236")</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="3.0">3.0mm</option>
+                            <option value="3.175">3.175mm (1/8")</option>
+                            <option value="6.0">6.0mm</option>
+                            <option value="6.35">6.35mm (1/4")</option>
+                          </>
+                        )}
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {materialPreset === 'custom' && (
+                      <div>
+                        <input type="number" value={customThickness} onChange={(e) => { setCustomThickness(e.target.value); handleThicknessChange(e.target.value); }} placeholder={`Enter thickness in ${units}`} step={units === 'mm' ? '0.1' : '0.001'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">Current: {formatUnit(convertFromInches(materialThickness))} {units}</p>
+                  </div>
+
+                  {/* Fixed Divider Settings */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Fixed Divider Settings</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Divider Height ({units})</label>
+                        <input type="number" value={dividerHeightInput} onChange={(e) => { setDividerHeightInput(e.target.value); handleDividerHeightChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Tip: Poker cards are 3.5" tall</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Slot Spacing ({units})</label>
+                        <input type="number" value={slotSpacingInput} onChange={(e) => { setSlotSpacingInput(e.target.value); handleSlotSpacingChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Distance between slots for flexible dividers</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Slot Depth ({units})</label>
+                        <input type="number" value={slotDepthInput} onChange={(e) => { setSlotDepthInput(e.target.value); handleSlotDepthChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">How deep the slots are cut from the top</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Flexible Divider Settings */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Flexible Divider Settings</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Top Tab Height ({units})</label>
+                        <input type="number" value={topTabHeightInput} onChange={(e) => { setTopTabHeightInput(e.target.value); handleTopTabHeightChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Corner Radius ({units})</label>
+                        <input type="number" value={cornerRadiusInput} onChange={(e) => { setCornerRadiusInput(e.target.value); handleCornerRadiusChange(e.target.value); }} step={units === 'mm' ? '0.5' : '0.0625'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Fit Clearance ({units})</label>
+                        <input type="number" value={flexDividerClearanceInput} onChange={(e) => { setFlexDividerClearanceInput(e.target.value); handleFlexDividerClearanceChange(e.target.value); }} step={units === 'mm' ? '0.1' : '0.005'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Total gap for sliding fit (0.05" typical)</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Side tab length automatically matches slot depth ({formatUnit(convertFromInches(slotDepth))} {units})</p>
+                  </div>
+
+                  {/* Lid Settings */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Lid Settings</h2>
+                    <div className="space-y-4">
+                      <div className="flex items-center">
+                        <input type="checkbox" id="includeLid" checked={includeLid} onChange={(e) => setIncludeLid(e.target.checked)} className="mr-2" />
+                        <label htmlFor="includeLid" className="text-sm font-medium text-gray-600">Include lid</label>
+                      </div>
+                      {includeLid && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-1">Lid Wall Height ({units})</label>
+                            <input type="number" value={lidHeightInput} onChange={(e) => { setLidHeightInput(e.target.value); handleLidHeightChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-1">Fit Clearance ({units})</label>
+                            <input type="number" value={lidClearanceInput} onChange={(e) => { setLidClearanceInput(e.target.value); handleLidClearanceChange(e.target.value); }} step={units === 'mm' ? '0.1' : '0.005'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                            <p className="text-xs text-gray-500 mt-1">Gap per side for snug fit (0.03" typical)</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Summary</h2>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <p><strong>Box exterior:</strong> {formatUnit(convertFromInches(dims.exteriorWidth))} x {formatUnit(convertFromInches(dims.exteriorDepth))} x {formatUnit(convertFromInches(dims.exteriorHeight))} {units}</p>
+                      <p><strong>Columns:</strong> {numColumns} (each {formatUnit(convertFromInches(columnWidth))} {units} wide)</p>
+                      <p><strong>Fixed dividers:</strong> {dims.numDividers} ({formatUnit(convertFromInches(dividerHeight))} {units} tall)</p>
+                      <p><strong>Total box pieces:</strong> {5 + dims.numDividers} (5 walls + {dims.numDividers} dividers)</p>
+                      <p><strong>Flexible divider templates:</strong> 3</p>
+                      {includeLid && (
+                        <>
+                          <p className="pt-2 border-t border-gray-300 mt-2"><strong>Lid exterior:</strong> {formatUnit(convertFromInches(dims.exteriorWidth + 2 * lidClearance + 2 * materialThickness))} x {formatUnit(convertFromInches(dims.exteriorDepth + 2 * lidClearance + 2 * materialThickness))} x {formatUnit(convertFromInches(lidHeight + materialThickness))} {units}</p>
+                          <p><strong>Lid pieces:</strong> 5 (4 walls + top)</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Material Size Check */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Size Check</h2>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Your Material or Laser Bed Size</label>
+                      <select value={bedPreset} onChange={(e) => { setBedPreset(e.target.value); if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x').map(Number); setBedSize({ width: w, height: h }); } }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        <option value="12x12">12" x 12"</option>
+                        <option value="12x20">12" x 20"</option>
+                        <option value="20x28">20" x 28"</option>
+                        <option value="24x36">24" x 36"</option>
+                        <option value="40x28">40" x 28"</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {bedPreset === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        <input type="number" placeholder="Width" value={customBedWidth} onChange={(e) => { setCustomBedWidth(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, width: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                        <input type="number" placeholder="Height" value={customBedHeight} onChange={(e) => { setCustomBedHeight(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, height: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <div className={`rounded p-3 border ${bedCheck.fits ? (bedCheck.tight ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200') : 'bg-red-50 border-red-200'}`}>
+                      <p className={`font-semibold ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-800' : 'text-green-800') : 'text-red-800'}`}>
+                        {bedCheck.fits ? (bedCheck.tight ? '⚠️ Tight fit - verify carefully' : '✅ All pieces fit') : '🚫 Won\'t fit!'}
+                      </p>
+                      <p className={`text-sm ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-700' : 'text-green-700') : 'text-red-700'}`}>
+                        Largest: {bedCheck.largest.width.toFixed(2)}" x {bedCheck.largest.height.toFixed(2)}" ({bedCheck.largest.name})
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Color Guide */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm">
+                    <h3 className="font-semibold text-gray-700 mb-2">SVG Color Guide</h3>
+                    <div className="space-y-1 text-gray-600">
+                      <p>Red = Cut lines</p>
+                      <p>Green = Labels (reference only)</p>
+                      <p>Blue = Scoring/line engraving</p>
+                      <p>Black = Raster/fill engraving</p>
+                    </div>
+                  </div>
+
+                  {/* Filename */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Filename</h2>
+                    <div className="flex items-center">
+                      <input type="text" value={filename} onChange={(e) => setFilename(e.target.value)} placeholder="e.g., poker-card-box" className="flex-1 px-3 py-2 border border-gray-300 rounded-l" />
+                      <span className="px-3 py-2 bg-gray-200 border border-l-0 border-gray-300 rounded-r text-gray-600">.svg</span>
+                    </div>
+                  </div>
+
+                  {/* Download Buttons */}
+                  <div className="space-y-3">
+                    <button onClick={downloadBoxSVG} className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+                      Download Box + Fixed Dividers
+                    </button>
+                    <button onClick={downloadFlexibleDividersSVG} className="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition-colors font-semibold">
+                      Download Flexible Divider Templates
+                    </button>
+                    {includeLid && (
+                      <button onClick={downloadLidSVG} className="w-full bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition-colors font-semibold">
+                        Download Lid
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Preview Column */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-700">Preview</h2>
+                    <select value={zoomLevel} onChange={(e) => setZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '600px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                    <div className="text-center mb-4">
+                      <p className="text-sm text-gray-600 font-semibold">Top-Down View</p>
+                      <p className="text-xs text-gray-500">Shows column layout with fixed dividers</p>
+                    </div>
+
+                    <svg
+                      width={`${dims.exteriorWidth * 60 * zoomLevel}px`}
+                      height={`${dims.exteriorDepth * 60 * zoomLevel}px`}
+                      viewBox={`0 0 ${dims.exteriorWidth} ${dims.exteriorDepth}`}
+                      style={{ background: '#f9fafb', display: 'block', margin: '0 auto' }}
+                    >
+                      {/* Box outline */}
+                      <rect x="0" y="0" width={dims.exteriorWidth} height={dims.exteriorDepth} fill="none" stroke="#3b82f6" strokeWidth="0.02" />
+
+                      {/* Walls */}
+                      <rect x="0" y="0" width={materialThickness} height={dims.exteriorDepth} fill="#a3a3a3" /> {/* Left wall */}
+                      <rect x={dims.exteriorWidth - materialThickness} y="0" width={materialThickness} height={dims.exteriorDepth} fill="#a3a3a3" /> {/* Right wall */}
+                      <rect x="0" y="0" width={dims.exteriorWidth} height={materialThickness} fill="#a3a3a3" /> {/* Back wall */}
+                      <rect x="0" y={dims.exteriorDepth - materialThickness} width={dims.exteriorWidth} height={materialThickness} fill="#a3a3a3" /> {/* Front wall */}
+
+                      {/* Fixed dividers and columns */}
+                      {(() => {
+                        const elements = [];
+                        let x = materialThickness; // Start after left wall
+
+                        for (let i = 0; i <= numColumns; i++) {
+                          // Divider
+                          elements.push(
+                            <rect
+                              key={`divider-${i}`}
+                              x={x}
+                              y={materialThickness}
+                              width={materialThickness}
+                              height={dims.interiorDepth}
+                              fill="#8b5a2b"
+                            />
+                          );
+
+                          // Column (except after last divider)
+                          if (i < numColumns) {
+                            elements.push(
+                              <rect
+                                key={`column-${i}`}
+                                x={x + materialThickness}
+                                y={materialThickness}
+                                width={columnWidth}
+                                height={dims.interiorDepth}
+                                fill="#f3e5ab"
+                              />
+                            );
+
+                            // Column label
+                            const labelX = x + materialThickness + columnWidth / 2;
+                            const labelY = dims.exteriorDepth / 2;
+                            elements.push(
+                              <text
+                                key={`label-${i}`}
+                                x={labelX}
+                                y={labelY}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fontSize={Math.min(columnWidth, dims.interiorDepth) * 0.15}
+                                fill="#666"
+                              >
+                                {formatUnit(convertFromInches(columnWidth))}
+                              </text>
+                            );
+
+                            x += materialThickness + columnWidth;
+                          }
+                        }
+
+                        return elements;
+                      })()}
+                    </svg>
+                  </div>
+
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p><strong>Assembly:</strong></p>
+                    <p>1. Assemble box walls using tab-and-notch joints</p>
+                    <p>2. Insert fixed dividers - tabs slot into front/back walls</p>
+                    <p>3. Place flexible dividers in slots as needed</p>
+                    <p></p>
+                    <p><strong>Fixed dividers:</strong> Have slots along top edge</p>
+                    <p><strong>Flexible dividers:</strong> Side tabs slide into slots</p>
+                  </div>
+
+                  {/* Box Construction Preview */}
+                  <div className="flex items-center justify-between mt-6">
+                    <div className="text-center flex-1">
+                      <p className="text-sm text-gray-600 font-semibold">Box Construction (Unfolded)</p>
+                      <p className="text-xs text-gray-500">Front, Back, Left, Right walls + Bottom</p>
+                    </div>
+                    <select value={boxZoomLevel} onChange={(e) => setBoxZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.25}>25%</option>
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '400px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                    {(() => {
+                      const ext = { width: dims.exteriorWidth, depth: dims.exteriorDepth, height: dims.interiorHeight };
+                      const sideW = dims.interiorDepth;
+                      // Match 5-sided-box-designer: width = exterior.width * 2 + 2, height = exterior.height * 2 + exterior.depth + 2.5
+                      const previewWidth = ext.width * 2 + 2;
+                      const previewHeight = ext.height * 2 + ext.depth + 2.5;
+
+                      return (
+                        <svg
+                          width={`${previewWidth * 96 * boxZoomLevel}px`}
+                          height={`${(ext.height + ext.depth + 1.5) * 96 * boxZoomLevel}px`}
+                          viewBox={`-0.5 -0.5 ${previewWidth} ${previewHeight}`}
+                          style={{ background: '#f9fafb', display: 'block' }}
+                        >
+                          <defs>
+                            <style>{`.box-cut { stroke: #dc2626; stroke-width: 0.02; fill: #f3e5ab; } .box-label { fill: #666; font-family: Arial; font-size: 0.25px; }`}</style>
+                          </defs>
+
+                          {/* Back Wall (top center) - notches on sides, tabs at bottom point toward bottom panel */}
+                          <g transform={`translate(${ext.depth + 0.25}, ${ext.height + materialThickness + 0.5 - ext.height - 0.25})`}>
+                            <path d={generateFrontBackWall(dims.exteriorWidth, ext.height, getDividerPositions(), dividerHeight)} className="box-cut" />
+                            <text className="box-label" x={dims.exteriorWidth / 2} y={-0.15} textAnchor="middle">Back</text>
+                          </g>
+
+                          {/* Middle row: Left Wall, Bottom, Right Wall */}
+                          <g transform={`translate(0, ${ext.height + materialThickness + 0.5})`}>
+                            {/* Left wall - rotated and positioned to the left of bottom */}
+                            {/* Center based on path body center (sideW/2), which equals bounding box center */}
+                            <g transform={`translate(${ext.depth}, ${ext.depth / 2}) rotate(-90) translate(${-sideW / 2}, ${-ext.height})`}>
+                              <path d={generateSideWall(sideW, ext.height)} className="box-cut" />
+                              <text className="box-label" x={sideW / 2} y={-0.2} textAnchor="middle">Left</text>
+                            </g>
+
+                            {/* Bottom panel */}
+                            <g transform={`translate(${ext.depth + 0.25}, 0)`}>
+                              <path d={generateBottom(dims.exteriorWidth, dims.exteriorDepth, sideW)} className="box-cut" />
+                              <text className="box-label" x={dims.exteriorWidth / 2} y={dims.exteriorDepth / 2} textAnchor="middle" dominantBaseline="middle">Bottom</text>
+                            </g>
+
+                            {/* Right wall - rotated and positioned to the right of bottom */}
+                            {/* Center based on path body center (sideW/2), which equals bounding box center */}
+                            <g transform={`translate(${ext.depth + 0.5 + dims.exteriorWidth + ext.height}, ${ext.depth / 2}) rotate(90) translate(${-sideW / 2}, 0)`}>
+                              <path d={generateSideWall(sideW, ext.height)} className="box-cut" />
+                              <text className="box-label" x={sideW / 2} y={-0.2} textAnchor="middle">Right</text>
+                            </g>
+                          </g>
+
+                          {/* Front Wall (bottom center) - rotated 180° so bottom tabs point toward bottom panel */}
+                          <g transform={`translate(${ext.depth + 0.25 + (dims.exteriorWidth / 2)}, ${ext.height + materialThickness + 0.5 + ext.depth + ext.height + 0.25}) rotate(180) translate(${-dims.exteriorWidth / 2}, 0)`}>
+                            <path d={generateFrontBackWall(dims.exteriorWidth, ext.height, getDividerPositions(), dividerHeight)} className="box-cut" />
+                            <text className="box-label" x={dims.exteriorWidth / 2} y={-0.3} textAnchor="middle">Front</text>
+                          </g>
+                        </svg>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Lid Construction Preview */}
+                  {includeLid && (
+                    <>
+                    <div className="flex items-center justify-between mt-6">
+                      <div className="text-center flex-1">
+                        <p className="text-sm text-gray-600 font-semibold">Lid Construction (Unfolded)</p>
+                        <p className="text-xs text-gray-500">Front, Back, Left, Right walls + Top</p>
+                      </div>
+                      <select value={lidZoomLevel} onChange={(e) => setLidZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                        <option value={0.25}>25%</option>
+                        <option value={0.5}>50%</option>
+                        <option value={1}>100%</option>
+                        <option value={1.5}>150%</option>
+                        <option value={2}>200%</option>
+                      </select>
+                    </div>
+                    <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '400px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                      {(() => {
+                        const lidIntW = dims.exteriorWidth + (2 * lidClearance);
+                        const lidIntD = dims.exteriorDepth + (2 * lidClearance);
+                        const lidExtW = lidIntW + (2 * materialThickness);
+                        const lidExtD = lidIntD + (2 * materialThickness);
+                        const lidSideW = lidIntD;
+                        // Match 5-sided-box-designer pattern
+                        const previewWidth = lidExtW * 2 + 2;
+                        const previewHeight = lidHeight * 2 + lidExtD + 2.5;
+
+                        // Local functions for lid pieces (matching generateLidSVG)
+                        const generateLidFrontBackPreview = (width, height) => {
+                          const tabDepth = materialThickness;
+                          const bottomTabCount = calculateTabCount(width);
+                          const sideTabCount = calculateTabCount(height);
+
+                          let path = `M 0 0`;
+                          path += ` L ${width} 0`;
+
+                          const rightNotches = generateTabPositions(height, sideTabCount);
+                          rightNotches.forEach(notch => {
+                            path += ` L ${width} ${notch.start}`;
+                            path += ` L ${width - tabDepth} ${notch.start}`;
+                            path += ` L ${width - tabDepth} ${notch.end}`;
+                            path += ` L ${width} ${notch.end}`;
+                          });
+                          path += ` L ${width} ${height}`;
+
+                          const bottomTabs = generateTabPositions(width, bottomTabCount);
+                          for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                            const tab = bottomTabs[i];
+                            path += ` L ${tab.end} ${height}`;
+                            path += ` L ${tab.end} ${height + tabDepth}`;
+                            path += ` L ${tab.start} ${height + tabDepth}`;
+                            path += ` L ${tab.start} ${height}`;
+                          }
+                          path += ` L 0 ${height}`;
+
+                          const leftNotches = generateTabPositions(height, sideTabCount);
+                          for (let i = leftNotches.length - 1; i >= 0; i--) {
+                            const notch = leftNotches[i];
+                            path += ` L 0 ${notch.end}`;
+                            path += ` L ${tabDepth} ${notch.end}`;
+                            path += ` L ${tabDepth} ${notch.start}`;
+                            path += ` L 0 ${notch.start}`;
+                          }
+                          path += ` L 0 0 Z`;
+                          return path;
+                        };
+
+                        const generateLidSidePreview = (width, height) => {
+                          const tabDepth = materialThickness;
+                          const bottomTabCount = calculateTabCount(width);
+                          const frontBackTabCount = calculateTabCount(height);
+
+                          let path = `M 0 0`;
+                          path += ` L ${width} 0`;
+
+                          const rightTabs = generateTabPositions(height, frontBackTabCount);
+                          rightTabs.forEach(tab => {
+                            path += ` L ${width} ${tab.start}`;
+                            path += ` L ${width + tabDepth} ${tab.start}`;
+                            path += ` L ${width + tabDepth} ${tab.end}`;
+                            path += ` L ${width} ${tab.end}`;
+                          });
+                          path += ` L ${width} ${height}`;
+
+                          const bottomTabs = generateTabPositions(width, bottomTabCount);
+                          for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                            const tab = bottomTabs[i];
+                            path += ` L ${tab.end} ${height}`;
+                            path += ` L ${tab.end} ${height + tabDepth}`;
+                            path += ` L ${tab.start} ${height + tabDepth}`;
+                            path += ` L ${tab.start} ${height}`;
+                          }
+                          path += ` L 0 ${height}`;
+
+                          const leftTabs = generateTabPositions(height, frontBackTabCount);
+                          for (let i = leftTabs.length - 1; i >= 0; i--) {
+                            const tab = leftTabs[i];
+                            path += ` L 0 ${tab.end}`;
+                            path += ` L ${-tabDepth} ${tab.end}`;
+                            path += ` L ${-tabDepth} ${tab.start}`;
+                            path += ` L 0 ${tab.start}`;
+                          }
+                          path += ` L 0 0 Z`;
+                          return path;
+                        };
+
+                        const generateLidTopPreview = (width, depth, sideWidth) => {
+                          const tabDepth = materialThickness;
+                          const widthNotchCount = calculateTabCount(width);
+                          const depthNotchCount = calculateTabCount(sideWidth);
+
+                          let path = `M 0 0`;
+
+                          const topNotches = generateTabPositions(width, widthNotchCount);
+                          topNotches.forEach(notch => {
+                            path += ` L ${notch.start} 0`;
+                            path += ` L ${notch.start} ${tabDepth}`;
+                            path += ` L ${notch.end} ${tabDepth}`;
+                            path += ` L ${notch.end} 0`;
+                          });
+                          path += ` L ${width} 0`;
+
+                          // Distribute notches across sideWidth to match side wall tab positions
+                          // Then offset by materialThickness since top is exteriorDepth but side wall body is sideWidth
+                          const rightNotches = generateTabPositions(sideWidth, depthNotchCount);
+                          rightNotches.forEach(notch => {
+                            const offsetStart = notch.start + materialThickness;
+                            const offsetEnd = notch.end + materialThickness;
+                            path += ` L ${width} ${offsetStart}`;
+                            path += ` L ${width - tabDepth} ${offsetStart}`;
+                            path += ` L ${width - tabDepth} ${offsetEnd}`;
+                            path += ` L ${width} ${offsetEnd}`;
+                          });
+                          path += ` L ${width} ${depth}`;
+
+                          const bottomNotches = generateTabPositions(width, widthNotchCount);
+                          for (let i = bottomNotches.length - 1; i >= 0; i--) {
+                            const notch = bottomNotches[i];
+                            path += ` L ${notch.end} ${depth}`;
+                            path += ` L ${notch.end} ${depth - tabDepth}`;
+                            path += ` L ${notch.start} ${depth - tabDepth}`;
+                            path += ` L ${notch.start} ${depth}`;
+                          }
+                          path += ` L 0 ${depth}`;
+
+                          // Distribute notches across sideWidth to match side wall tab positions
+                          // Then offset by materialThickness
+                          const leftNotches = generateTabPositions(sideWidth, depthNotchCount);
+                          for (let i = leftNotches.length - 1; i >= 0; i--) {
+                            const notch = leftNotches[i];
+                            const offsetStart = notch.start + materialThickness;
+                            const offsetEnd = notch.end + materialThickness;
+                            path += ` L 0 ${offsetEnd}`;
+                            path += ` L ${tabDepth} ${offsetEnd}`;
+                            path += ` L ${tabDepth} ${offsetStart}`;
+                            path += ` L 0 ${offsetStart}`;
+                          }
+                          path += ` L 0 0 Z`;
+                          return path;
+                        };
+
+                        return (
+                          <svg
+                            width={`${previewWidth * 96 * lidZoomLevel}px`}
+                            height={`${(lidHeight + lidExtD + 1.5) * 96 * lidZoomLevel}px`}
+                            viewBox={`-0.5 -0.5 ${previewWidth} ${previewHeight}`}
+                            style={{ background: '#f9fafb', display: 'block' }}
+                          >
+                            <defs>
+                              <style>{`.lid-cut { stroke: #7c3aed; stroke-width: 0.02; fill: #e9d5ff; } .lid-label { fill: #666; font-family: Arial; font-size: 0.25px; }`}</style>
+                            </defs>
+
+                            {/* Back Wall (top center) - notches on sides, tabs at bottom point toward top panel */}
+                            <g transform={`translate(${lidExtD + 0.25}, ${lidHeight + materialThickness + 0.5 - lidHeight - 0.25})`}>
+                              <path d={generateLidFrontBackPreview(lidExtW, lidHeight)} className="lid-cut" />
+                              <text className="lid-label" x={lidExtW / 2} y={-0.15} textAnchor="middle">Back</text>
+                            </g>
+
+                            {/* Middle row: Left Wall, Top, Right Wall */}
+                            <g transform={`translate(0, ${lidHeight + materialThickness + 0.5})`}>
+                              {/* Left wall - rotated and positioned to the left of top */}
+                              {/* Center based on path body center (lidSideW/2), which equals bounding box center */}
+                              <g transform={`translate(${lidExtD}, ${lidExtD / 2}) rotate(-90) translate(${-lidSideW / 2}, ${-lidHeight})`}>
+                                <path d={generateLidSidePreview(lidSideW, lidHeight)} className="lid-cut" />
+                                <text className="lid-label" x={lidSideW / 2} y={-0.2} textAnchor="middle">Left</text>
+                              </g>
+
+                              {/* Top panel */}
+                              <g transform={`translate(${lidExtD + 0.25}, 0)`}>
+                                <path d={generateLidTopPreview(lidExtW, lidExtD, lidSideW)} className="lid-cut" />
+                                <text className="lid-label" x={lidExtW / 2} y={lidExtD / 2} textAnchor="middle" dominantBaseline="middle">Top</text>
+                              </g>
+
+                              {/* Right wall - rotated and positioned to the right of top */}
+                              {/* Center based on path body center (lidSideW/2), which equals bounding box center */}
+                              <g transform={`translate(${lidExtD + 0.5 + lidExtW + lidHeight}, ${lidExtD / 2}) rotate(90) translate(${-lidSideW / 2}, 0)`}>
+                                <path d={generateLidSidePreview(lidSideW, lidHeight)} className="lid-cut" />
+                                <text className="lid-label" x={lidSideW / 2} y={-0.2} textAnchor="middle">Right</text>
+                              </g>
+                            </g>
+
+                            {/* Front Wall (bottom center) - rotated 180° so bottom tabs point toward top panel */}
+                            <g transform={`translate(${lidExtD + 0.25 + (lidExtW / 2)}, ${lidHeight + materialThickness + 0.5 + lidExtD + lidHeight + 0.25}) rotate(180) translate(${-lidExtW / 2}, 0)`}>
+                              <path d={generateLidFrontBackPreview(lidExtW, lidHeight)} className="lid-cut" />
+                              <text className="lid-label" x={lidExtW / 2} y={-0.3} textAnchor="middle">Front</text>
+                            </g>
+                          </svg>
+                        );
+                      })()}
+                    </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<CardBoxDesigner />, document.getElementById('root'));
+    </script>
+</body>
+</html>
