@@ -62,11 +62,11 @@ const toolsData = [
   {
     id: "box-designer",
     name: "5-Sided Box Designer",
-    subtitle: "Custom organizer boxes with tab-and-notch joints",
-    description: "Create custom laser-cut boxes with easy-to-assemble tab-and-notch joinery. Perfect for organizers, displays, and storage solutions.",
+    subtitle: "Custom boxes with optional fitted lid",
+    description: "Create custom laser-cut boxes with easy-to-assemble tab-and-notch joinery. Add an optional fitted lid with adjustable clearance for a perfect fit. Great for organizers, gift boxes, displays, and storage solutions.",
     image: "img/labubu-vanity.jpg",
     imageAlt: "Laser-cut vanity box with tab-and-notch joinery",
-    link: "5-sided-box-designer.html",
+    link: "5-sided-box-designer-v2.html",
     videoId: "uhBEGo6jVJw",
     videoTitle: "5 Sided Box Designer",
     colorScheme: {
@@ -79,10 +79,10 @@ const toolsData = [
       buttonGradient: "linear-gradient(135deg, #059669 0%, #047857 100%)"
     },
     features: [
+      "Optional fitted lid with adjustable clearance",
       "Interior or exterior dimension modes",
-      "Adaptive tab spacing (scales with size)",
       "Material thickness presets (1/8\", 1/4\", metric)",
-      "Material and bed size checker"
+      "Custom filenames and material size checker"
     ],
     imageOverlay: "Build custom boxes in seconds →",
     fallbackEmoji: "📦"
