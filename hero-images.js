@@ -3,7 +3,7 @@
 const heroImages = [
     { src: 'img/wingspan-insert.jpg', alt: 'Wingspan board game insert made with laser cutter' },
     { src: 'img/candle-shades-lit.png', alt: 'Laser cut candle shades with decorative motifs, lit from inside' },
-    { src: 'img/acrylic-candle-shades.png', alt: 'Acrylic candle shades with intricate patterns' },
-    { src: 'img/living-hinge-flat.jpg', alt: 'Flat living hinge pattern for laser cutting' },
+    { src: 'img/card-box.jpg', alt: 'Laser-cut card storage box with dividers' },
+    { src: 'img/display-shelf.png', alt: 'Laser-cut display shelf for miniatures and collectibles' },
     { src: 'img/labubu-vanity.jpg', alt: 'Labubu vanity project made with laser cutter' }
 ];
