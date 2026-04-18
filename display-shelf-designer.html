@@ -1,0 +1,1380 @@
+<!--
+  Tool: Display Shelf Designer
+  Version: v1.0.0
+  Last Updated: February 2026
+  Author: GreyLightMay
+  Website: https://greylightmay.com
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display Shelf Designer v1.0.0</title>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
+    <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+
+        const DisplayShelfDesigner = () => {
+          // Mode
+          const [shelfMode, setShelfMode] = useState('open'); // 'open' | 'enclosed'
+          const [dimensionMode, setDimensionMode] = useState('interior');
+          const [units, setUnits] = useState('inches');
+
+          // Shelf dimensions (stored in inches)
+          const [shelfWidth, setShelfWidth] = useState(12);
+          const [shelfDepth, setShelfDepth] = useState(6);
+          const [numShelves, setNumShelves] = useState(3);
+
+          // Spacing
+          const [spacingMode, setSpacingMode] = useState('even');
+          const [evenSpacing, setEvenSpacing] = useState(4);
+          const [customSpacings, setCustomSpacings] = useState([4, 4]);
+          const [bottomTierHeight, setBottomTierHeight] = useState(4); // enclosed mode only
+          const [openBottomTier, setOpenBottomTier] = useState(1); // open mode: height of bottom shelf above base
+          const [topExtension, setTopExtension] = useState(1);
+
+          // Material
+          const [materialThickness, setMaterialThickness] = useState(0.125);
+          const [materialPreset, setMaterialPreset] = useState('0.125');
+
+          // Bed size
+          const [bedSize, setBedSize] = useState({ width: 12, height: 20 });
+          const [bedPreset, setBedPreset] = useState('12x20');
+
+          // UI state
+          const [frontZoom, setFrontZoom] = useState(0.5);
+          const [boxZoomLevel, setBoxZoomLevel] = useState(0.5);
+          const [cutZoom, setCutZoom] = useState(0.5);
+          const [filename, setFilename] = useState('display-shelf');
+
+          // Input display states
+          const [widthInput, setWidthInput] = useState('12');
+          const [depthInput, setDepthInput] = useState('6');
+          const [evenSpacingInput, setEvenSpacingInput] = useState('4');
+          const [customSpacingInputs, setCustomSpacingInputs] = useState(['4', '4']);
+          const [bottomTierInput, setBottomTierInput] = useState('4');
+          const [openBottomTierInput, setOpenBottomTierInput] = useState('1');
+          const [topExtensionInput, setTopExtensionInput] = useState('1');
+          const [customThickness, setCustomThickness] = useState('');
+          const [customBedWidth, setCustomBedWidth] = useState('');
+          const [customBedHeight, setCustomBedHeight] = useState('');
+
+          // Unit conversion utilities (copied from card-box-designer)
+          const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
+          const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
+          const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+
+          // Update display inputs when units change
+          useEffect(() => {
+            setWidthInput(formatUnit(convertFromInches(shelfWidth)));
+            setDepthInput(formatUnit(convertFromInches(shelfDepth)));
+            setEvenSpacingInput(formatUnit(convertFromInches(evenSpacing)));
+            setBottomTierInput(formatUnit(convertFromInches(bottomTierHeight)));
+            setOpenBottomTierInput(formatUnit(convertFromInches(openBottomTier)));
+            setTopExtensionInput(formatUnit(convertFromInches(topExtension)));
+            setCustomSpacingInputs(customSpacings.map(s => formatUnit(convertFromInches(s))));
+          }, [units]);
+
+          // Material preset handling (copied from card-box-designer)
+          useEffect(() => {
+            if (materialPreset === 'custom') return;
+            const presets = units === 'inches'
+              ? { '0.125': 0.125, '0.25': 0.25, '0.118': 0.118, '0.236': 0.236 }
+              : { '3.0': 3.0 / 25.4, '6.0': 6.0 / 25.4, '3.175': 3.175 / 25.4, '6.35': 6.35 / 25.4 };
+            setMaterialThickness(presets[materialPreset] || 0.125);
+          }, [materialPreset, units]);
+
+          // Resize custom spacings when numShelves changes
+          useEffect(() => {
+            // Open mode: numShelves - 1 gaps between shelves
+            // Enclosed mode: numShelves gaps (one per surface, including top tier)
+            const needed = shelfMode === 'enclosed' ? numShelves : Math.max(0, numShelves - 1);
+            setCustomSpacings(prev => {
+              const arr = [...prev];
+              while (arr.length < needed) arr.push(evenSpacing);
+              return arr.slice(0, needed);
+            });
+            setCustomSpacingInputs(prev => {
+              const arr = [...prev];
+              while (arr.length < needed) arr.push(formatUnit(convertFromInches(evenSpacing)));
+              return arr.slice(0, needed);
+            });
+          }, [numShelves, shelfMode]);
+
+          // Tab constants
+          const tabWidth = 0.5;
+
+          // Generate tab positions (copied exactly from card-box-designer)
+          const generateTabPositions = (edgeLength, numTabs) => {
+            const spacing = edgeLength / numTabs;
+            const positions = [];
+            for (let i = 0; i < numTabs; i++) {
+              const center = (i + 0.5) * spacing;
+              positions.push({
+                start: center - tabWidth / 2,
+                end: center + tabWidth / 2
+              });
+            }
+            return positions;
+          };
+
+          // Calculate tab count (copied exactly from card-box-designer)
+          const calculateTabCount = (edgeLength) => Math.max(1, Math.ceil(edgeLength / 2));
+
+          // Calculate dimensions
+          // In open mode: numShelves = number of physical shelf pieces
+          // In enclosed mode: numShelves = total usable surfaces (box bottom counts as first)
+          //   so partition pieces to cut = numShelves - 1
+          const calculateDimensions = useCallback(() => {
+            // Number of internal partition pieces
+            const partitions = shelfMode === 'enclosed' ? numShelves - 1 : numShelves;
+
+            if (shelfMode === 'open') {
+              const btmTier = openBottomTier;
+              const tierSpacings = spacingMode === 'even'
+                ? Array(Math.max(0, numShelves - 1)).fill(evenSpacing)
+                : customSpacings.slice(0, numShelves - 1);
+              const totalInterShelfSpacing = tierSpacings.reduce((a, b) => a + b, 0);
+              const interiorHeight = btmTier + (numShelves * materialThickness) + totalInterShelfSpacing + topExtension;
+
+              // Slot Y positions measured from bottom of side panel
+              const slotPositions = [];
+              let y = btmTier;
+              for (let i = 0; i < numShelves; i++) {
+                slotPositions.push(y);
+                if (i < numShelves - 1) {
+                  y += materialThickness + tierSpacings[i];
+                }
+              }
+
+              const sidePanelHeight = interiorHeight;
+              const sidePanelWidth = shelfDepth;
+              const interiorW = dimensionMode === 'interior' ? shelfWidth : shelfWidth - 2 * materialThickness;
+              const exteriorW = dimensionMode === 'interior' ? shelfWidth + 2 * materialThickness : shelfWidth;
+              return {
+                sidePanelHeight, sidePanelWidth,
+                interiorWidth: dimensionMode === 'interior' ? shelfWidth : interiorW,
+                exteriorWidth: exteriorW,
+                interiorHeight, interiorDepth: shelfDepth,
+                shelfPieceWidth: dimensionMode === 'interior' ? shelfWidth : interiorW,
+                shelfPieceDepth: shelfDepth,
+                numShelves: partitions, slotPositions, tierSpacings,
+                bottomTierHeight: btmTier, topExtension,
+                hasTop: false, hasBottom: false, hasBack: false
+              };
+            } else {
+              // Enclosed mode: bottom of box is first shelf surface
+              // Each surface gets a tier of space above it:
+              //   Surface 1 (floor) → gap → Partition 1 → gap → Partition 2 → gap → top panel
+              // Total gaps = numShelves (one per surface, including the top tier)
+              const numGaps = numShelves;
+              const tierSpacings = spacingMode === 'even'
+                ? Array(numGaps).fill(evenSpacing)
+                : customSpacings.slice(0, numGaps);
+              const totalSpacing = tierSpacings.reduce((a, b) => a + b, 0);
+              const interiorHeight = totalSpacing + (partitions * materialThickness);
+
+              // Slot Y positions for partitions, measured from bottom of side panel body
+              const slotPositions = [];
+              let y = 0;
+              for (let i = 0; i < partitions; i++) {
+                y += tierSpacings[i] || evenSpacing;
+                slotPositions.push(y);
+                if (i < partitions - 1) {
+                  y += materialThickness;
+                }
+              }
+
+              const interiorW = dimensionMode === 'interior' ? shelfWidth : shelfWidth - 2 * materialThickness;
+              const exteriorW = dimensionMode === 'interior' ? shelfWidth + 2 * materialThickness : shelfWidth;
+              const interiorD = dimensionMode === 'interior' ? shelfDepth : shelfDepth - materialThickness;
+              const exteriorD = dimensionMode === 'interior' ? shelfDepth + materialThickness : shelfDepth;
+              // Side panel body = interiorHeight. Tabs protrude mt above and below.
+              // Back panel = interiorHeight + 2*mt (matches side panel total with tabs).
+              // Exterior height = mt (top panel) + interiorHeight + mt (bottom panel)
+              const backPanelHeight = interiorHeight + 2 * materialThickness;
+              const exteriorH = backPanelHeight; // back panel spans the full exterior height
+              return {
+                sidePanelHeight: interiorHeight,
+                sidePanelWidth: interiorD,
+                backPanelHeight: backPanelHeight,
+                interiorWidth: interiorW, exteriorWidth: exteriorW,
+                interiorHeight, exteriorHeight: exteriorH,
+                interiorDepth: interiorD, exteriorDepth: exteriorD,
+                shelfPieceWidth: interiorW,
+                shelfPieceDepth: interiorD,
+                numShelves: partitions, slotPositions, tierSpacings,
+                bottomTierHeight: tierSpacings[0] || evenSpacing,
+                topExtension: tierSpacings[tierSpacings.length - 1] || evenSpacing,
+                hasTop: true, hasBottom: true, hasBack: true
+              };
+            }
+          }, [shelfMode, dimensionMode, shelfWidth, shelfDepth, numShelves, spacingMode, evenSpacing, customSpacings, bottomTierHeight, openBottomTier, topExtension, materialThickness]);
+
+          const dims = calculateDimensions();
+
+          // ===== PATH GENERATION =====
+
+          // Open side panel: simple rectangle + horizontal slots
+          const generateOpenSidePanel = useCallback((width, height, slotPositions) => {
+            let path = `M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} L 0 0 Z`;
+
+            const shelfTabCount = calculateTabCount(width);
+            const tabPositions = generateTabPositions(width, shelfTabCount);
+            let slots = '';
+            slotPositions.forEach(slotY => {
+              const svgTop = height - slotY - materialThickness;
+              const svgBottom = height - slotY;
+              tabPositions.forEach(tab => {
+                slots += ` M ${tab.start} ${svgTop} L ${tab.end} ${svgTop} L ${tab.end} ${svgBottom} L ${tab.start} ${svgBottom} Z`;
+              });
+            });
+            return path + slots;
+          }, [materialThickness]);
+
+          // Enclosed side panel: tabs on top, bottom, back edges + front plain + shelf slots
+          // Follows card-box/five-sided-box pattern: body = width x height, tabs protrude outward.
+          // Top tabs protrude UP by -tabDepth, bottom tabs protrude DOWN by +tabDepth.
+          // Back-edge tabs protrude RIGHT by +tabDepth. Front edge is plain.
+          const generateEnclosedSidePanel = useCallback((width, height, slotPositions) => {
+            const tabDepth = materialThickness;
+
+            const topBottomTabCount = calculateTabCount(width);
+            const backTabCount = calculateTabCount(height);
+
+            let path = `M 0 0`;
+
+            // Top edge with tabs sticking UP
+            const topTabs = generateTabPositions(width, topBottomTabCount);
+            topTabs.forEach(tab => {
+              path += ` L ${tab.start} 0`;
+              path += ` L ${tab.start} ${-tabDepth}`;
+              path += ` L ${tab.end} ${-tabDepth}`;
+              path += ` L ${tab.end} 0`;
+            });
+            path += ` L ${width} 0`;
+
+            // Right edge (back) with tabs sticking OUT
+            const backTabs = generateTabPositions(height, backTabCount);
+            backTabs.forEach(tab => {
+              path += ` L ${width} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.end}`;
+              path += ` L ${width} ${tab.end}`;
+            });
+            path += ` L ${width} ${height}`;
+
+            // Bottom edge with tabs sticking DOWN
+            const bottomTabs = generateTabPositions(width, topBottomTabCount);
+            for (let i = bottomTabs.length - 1; i >= 0; i--) {
+              const tab = bottomTabs[i];
+              path += ` L ${tab.end} ${height}`;
+              path += ` L ${tab.end} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height + tabDepth}`;
+              path += ` L ${tab.start} ${height}`;
+            }
+            path += ` L 0 ${height}`;
+
+            // Left edge (front) - plain
+            path += ` L 0 0 Z`;
+
+            // Shelf slots (same as open mode)
+            const shelfTabCount = calculateTabCount(width);
+            const tabPositions = generateTabPositions(width, shelfTabCount);
+            let slots = '';
+            slotPositions.forEach(slotY => {
+              const svgTop = height - slotY - materialThickness;
+              const svgBottom = height - slotY;
+              tabPositions.forEach(tab => {
+                slots += ` M ${tab.start} ${svgTop} L ${tab.end} ${svgTop} L ${tab.end} ${svgBottom} L ${tab.start} ${svgBottom} Z`;
+              });
+            });
+            return path + slots;
+          }, [materialThickness]);
+
+          // Shelf piece: tabs on left and right edges (open mode)
+          const generateShelf = useCallback((width, depth) => {
+            const tabDepth = materialThickness;
+            const depthTabCount = calculateTabCount(depth);
+
+            let path = `M 0 0`;
+
+            // Top edge (back of shelf) - plain
+            path += ` L ${width} 0`;
+
+            // Right edge with tabs sticking OUT
+            const rightTabs = generateTabPositions(depth, depthTabCount);
+            rightTabs.forEach(tab => {
+              path += ` L ${width} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.end}`;
+              path += ` L ${width} ${tab.end}`;
+            });
+            path += ` L ${width} ${depth}`;
+
+            // Bottom edge (front of shelf) - plain
+            path += ` L 0 ${depth}`;
+
+            // Left edge with tabs sticking OUT
+            const leftTabs = generateTabPositions(depth, depthTabCount);
+            for (let i = leftTabs.length - 1; i >= 0; i--) {
+              const tab = leftTabs[i];
+              path += ` L 0 ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.start}`;
+              path += ` L 0 ${tab.start}`;
+            }
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness]);
+
+          // Enclosed partition shelf: tabs on left, right, AND back edges (back tabs for back panel support)
+          const generateEnclosedShelf = useCallback((width, depth) => {
+            const tabDepth = materialThickness;
+            const depthTabCount = calculateTabCount(depth);
+            const widthTabCount = calculateTabCount(width);
+
+            let path = `M 0 0`;
+
+            // Top edge (back of shelf) - tabs sticking UP (into back panel)
+            const backTabs = generateTabPositions(width, widthTabCount);
+            backTabs.forEach(tab => {
+              path += ` L ${tab.start} 0`;
+              path += ` L ${tab.start} ${-tabDepth}`;
+              path += ` L ${tab.end} ${-tabDepth}`;
+              path += ` L ${tab.end} 0`;
+            });
+            path += ` L ${width} 0`;
+
+            // Right edge with tabs sticking OUT
+            const rightTabs = generateTabPositions(depth, depthTabCount);
+            rightTabs.forEach(tab => {
+              path += ` L ${width} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.start}`;
+              path += ` L ${width + tabDepth} ${tab.end}`;
+              path += ` L ${width} ${tab.end}`;
+            });
+            path += ` L ${width} ${depth}`;
+
+            // Bottom edge (front of shelf) - plain
+            path += ` L 0 ${depth}`;
+
+            // Left edge with tabs sticking OUT
+            const leftTabs = generateTabPositions(depth, depthTabCount);
+            for (let i = leftTabs.length - 1; i >= 0; i--) {
+              const tab = leftTabs[i];
+              path += ` L 0 ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.end}`;
+              path += ` L ${-tabDepth} ${tab.start}`;
+              path += ` L 0 ${tab.start}`;
+            }
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness]);
+
+          // Top/Bottom panel for enclosed mode (notches on left, right, back; front plain)
+          // Copied from card-box-designer generateBottom, modified for 3-sided notches
+          // Top/Bottom panel for enclosed mode
+          // Matches card-box-designer front/back wall pattern:
+          //   Top edge (Y=0) = PLAIN (open front of shelf)
+          //   Right edge = NOTCHES (receive right side panel tabs)
+          //   Bottom edge (Y=depth) = TABS pointing down (insert into back panel notches)
+          //   Left edge = NOTCHES (receive left side panel tabs)
+          const generateTopBottomPanel = useCallback((width, depth, sideWallWidth) => {
+            const tabDepth = materialThickness;
+            const widthTabCount = calculateTabCount(width);
+            const depthNotchCount = calculateTabCount(sideWallWidth);
+
+            let path = `M 0 0`;
+
+            // Top edge (front of shelf) - PLAIN
+            path += ` L ${width} 0`;
+
+            // Right edge with notches for right side panel
+            const rightNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+            rightNotches.forEach(notch => {
+              const offsetStart = notch.start + materialThickness;
+              const offsetEnd = notch.end + materialThickness;
+              path += ` L ${width} ${offsetStart}`;
+              path += ` L ${width - tabDepth} ${offsetStart}`;
+              path += ` L ${width - tabDepth} ${offsetEnd}`;
+              path += ` L ${width} ${offsetEnd}`;
+            });
+            path += ` L ${width} ${depth}`;
+
+            // Bottom edge (back of shelf) with TABS pointing down (into back panel)
+            // Copied from card-box-designer front/back wall bottom edge pattern
+            const bottomTabs = generateTabPositions(width, widthTabCount);
+            for (let i = bottomTabs.length - 1; i >= 0; i--) {
+              const tab = bottomTabs[i];
+              path += ` L ${tab.end} ${depth}`;
+              path += ` L ${tab.end} ${depth + tabDepth}`;
+              path += ` L ${tab.start} ${depth + tabDepth}`;
+              path += ` L ${tab.start} ${depth}`;
+            }
+            path += ` L 0 ${depth}`;
+
+            // Left edge with notches for left side panel
+            const leftNotches = generateTabPositions(sideWallWidth, depthNotchCount);
+            for (let i = leftNotches.length - 1; i >= 0; i--) {
+              const notch = leftNotches[i];
+              const offsetStart = notch.start + materialThickness;
+              const offsetEnd = notch.end + materialThickness;
+              path += ` L 0 ${offsetEnd}`;
+              path += ` L ${tabDepth} ${offsetEnd}`;
+              path += ` L ${tabDepth} ${offsetStart}`;
+              path += ` L 0 ${offsetStart}`;
+            }
+            path += ` L 0 0 Z`;
+
+            return path;
+          }, [materialThickness]);
+
+          // Back panel for enclosed mode
+          // height = backPanelHeight = interiorHeight + 2*mt
+          // This matches the side panel total (body + top/bottom tabs).
+          // Top/bottom notches receive top/bottom panel tabs.
+          // Left/right notches receive side panel back-edge tabs (offset by mt from panel edges).
+          // Horizontal slots at partition positions for enclosed shelf back-edge tabs.
+          const generateBackPanel = useCallback((width, height, slotPositions) => {
+            const mt = materialThickness;
+            const widthNotchCount = calculateTabCount(width);
+            // Side panel body = height - 2*mt = interiorHeight
+            // Side panel back-edge tabs span this body height, starting at mt from back panel top
+            const sideBodyHeight = height - 2 * mt;
+            const sideNotchCount = calculateTabCount(sideBodyHeight);
+
+            let path = `M 0 0`;
+
+            // Top edge with notches (receive top panel tabs)
+            const topNotches = generateTabPositions(width, widthNotchCount);
+            topNotches.forEach(notch => {
+              path += ` L ${notch.start} 0`;
+              path += ` L ${notch.start} ${mt}`;
+              path += ` L ${notch.end} ${mt}`;
+              path += ` L ${notch.end} 0`;
+            });
+            path += ` L ${width} 0`;
+
+            // Right edge with notches (receive side panel back-edge tabs)
+            // Side panel body occupies mt to height-mt of the back panel
+            const rightNotches = generateTabPositions(sideBodyHeight, sideNotchCount);
+            rightNotches.forEach(notch => {
+              path += ` L ${width} ${mt + notch.start}`;
+              path += ` L ${width - mt} ${mt + notch.start}`;
+              path += ` L ${width - mt} ${mt + notch.end}`;
+              path += ` L ${width} ${mt + notch.end}`;
+            });
+            path += ` L ${width} ${height}`;
+
+            // Bottom edge with notches (receive bottom panel tabs)
+            const bottomNotches = generateTabPositions(width, widthNotchCount);
+            for (let i = bottomNotches.length - 1; i >= 0; i--) {
+              const notch = bottomNotches[i];
+              path += ` L ${notch.end} ${height}`;
+              path += ` L ${notch.end} ${height - mt}`;
+              path += ` L ${notch.start} ${height - mt}`;
+              path += ` L ${notch.start} ${height}`;
+            }
+            path += ` L 0 ${height}`;
+
+            // Left edge with notches (receive side panel back-edge tabs)
+            const leftNotches = generateTabPositions(sideBodyHeight, sideNotchCount);
+            for (let i = leftNotches.length - 1; i >= 0; i--) {
+              const notch = leftNotches[i];
+              path += ` L 0 ${mt + notch.end}`;
+              path += ` L ${mt} ${mt + notch.end}`;
+              path += ` L ${mt} ${mt + notch.start}`;
+              path += ` L 0 ${mt + notch.start}`;
+            }
+            path += ` L 0 0 Z`;
+
+            // Horizontal slots for partition back-edge tabs
+            // Shelf pieces are interior-width, centered between side panels.
+            // Back panel width = exteriorWidth, interior starts at mt from left edge.
+            // Interior region vertically: mt (top) to height-mt (bottom).
+            if (slotPositions && slotPositions.length > 0) {
+              const shelfWidth = width - 2 * mt;
+              const shelfTabCount = calculateTabCount(shelfWidth);
+              const tabPositions = generateTabPositions(shelfWidth, shelfTabCount);
+              let slots = '';
+              slotPositions.forEach(slotY => {
+                // slotY measured from bottom of interior (= side panel body bottom)
+                // Interior bottom in back panel SVG = height - mt
+                const svgBottom = (height - mt) - slotY;
+                const svgTop = svgBottom - mt;
+                tabPositions.forEach(tab => {
+                  slots += ` M ${mt + tab.start} ${svgTop} L ${mt + tab.end} ${svgTop} L ${mt + tab.end} ${svgBottom} L ${mt + tab.start} ${svgBottom} Z`;
+                });
+              });
+              path += slots;
+            }
+
+            return path;
+          }, [materialThickness]);
+
+          // ===== SVG EXPORT =====
+          const generateSVG = useCallback(() => {
+            const spacing = 0.25;
+            const tabDepth = materialThickness;
+
+            // Side panel bounding box
+            // Enclosed: back-edge tab protrudes +mt in width, top/bottom tabs protrude +2*mt in height
+            const sideBBox = shelfMode === 'open'
+              ? { w: dims.sidePanelWidth, h: dims.sidePanelHeight }
+              : { w: dims.sidePanelWidth + tabDepth, h: dims.sidePanelHeight + 2 * tabDepth };
+
+            // Shelf bounding box (tabs on left and right; enclosed mode adds back-edge tabs)
+            const shelfBBox = shelfMode === 'enclosed'
+              ? { w: dims.shelfPieceWidth + 2 * tabDepth, h: dims.shelfPieceDepth + tabDepth }
+              : { w: dims.shelfPieceWidth + 2 * tabDepth, h: dims.shelfPieceDepth };
+
+            // Row 1: 2 side panels
+            const row1Width = 2 * sideBBox.w + spacing;
+            const row1Height = sideBBox.h;
+
+            // Row 2+: shelves
+            const maxRowWidth = Math.max(row1Width, 20);
+            const shelvesPerRow = Math.max(1, Math.floor(maxRowWidth / (shelfBBox.w + spacing)));
+            const shelfRows = Math.ceil(dims.numShelves / shelvesPerRow);
+            const row2Height = shelfRows * shelfBBox.h + (shelfRows - 1) * spacing;
+            const row2Width = shelvesPerRow * shelfBBox.w + (shelvesPerRow - 1) * spacing;
+
+            // Row 3 (enclosed): top, bottom, back
+            let row3Height = 0, row3Width = 0;
+            if (shelfMode === 'enclosed') {
+              const topBottomBBox = { w: dims.exteriorWidth, h: dims.interiorDepth + materialThickness };
+              const backBBox = { w: dims.exteriorWidth, h: dims.backPanelHeight };
+              row3Width = 2 * topBottomBBox.w + spacing + backBBox.w + 2 * spacing;
+              row3Height = Math.max(topBottomBBox.h, backBBox.h);
+            }
+
+            const totalWidth = Math.max(row1Width, row2Width, row3Width);
+            const totalHeight = row1Height + spacing + row2Height + (shelfMode === 'enclosed' ? spacing + row3Height : 0);
+
+            const svgWidth = convertFromInches(totalWidth);
+            const svgHeight = convertFromInches(totalHeight);
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Display Shelf Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<svg width="${svgWidth}${units === 'mm' ? 'mm' : 'in'}" height="${svgHeight}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs>\n    <style>\n`;
+            svg += `      .cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }\n`;
+            svg += `    </style>\n  </defs>\n`;
+
+            let currentY = 0;
+
+            // Row 1: Side panels
+            const sideOffsetX = 0;
+            const sideOffsetY = shelfMode === 'enclosed' ? tabDepth : 0;
+
+            const sidePath = shelfMode === 'open'
+              ? generateOpenSidePanel(dims.sidePanelWidth, dims.sidePanelHeight, dims.slotPositions)
+              : generateEnclosedSidePanel(dims.sidePanelWidth, dims.sidePanelHeight, dims.slotPositions);
+
+            svg += `  <g id="left-side" transform="translate(${sideOffsetX}, ${sideOffsetY})">\n`;
+            svg += `    <path d="${sidePath}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            svg += `  <g id="right-side" transform="translate(${sideBBox.w + spacing + sideOffsetX}, ${sideOffsetY})">\n`;
+            svg += `    <path d="${sidePath}" class="cut-line" />\n`;
+            svg += `  </g>\n`;
+
+            currentY += row1Height + spacing;
+
+            // Row 2+: Shelves (enclosed mode partitions get back-edge tabs)
+            const shelfPath = shelfMode === 'enclosed'
+              ? generateEnclosedShelf(dims.shelfPieceWidth, dims.shelfPieceDepth)
+              : generateShelf(dims.shelfPieceWidth, dims.shelfPieceDepth);
+            for (let i = 0; i < dims.numShelves; i++) {
+              const row = Math.floor(i / shelvesPerRow);
+              const col = i % shelvesPerRow;
+              const dx = col * (shelfBBox.w + spacing) + tabDepth;
+              const dy = currentY + row * (shelfBBox.h + spacing) + (shelfMode === 'enclosed' ? tabDepth : 0);
+              svg += `  <g id="shelf-${i + 1}" transform="translate(${dx}, ${dy})">\n`;
+              svg += `    <path d="${shelfPath}" class="cut-line" />\n`;
+              svg += `  </g>\n`;
+            }
+
+            currentY += row2Height + spacing;
+
+            // Row 3 (enclosed only): Top, Bottom, Back
+            if (shelfMode === 'enclosed') {
+              const topBottomW = dims.exteriorWidth;
+              const topBottomD = dims.interiorDepth;
+
+              svg += `  <g id="top-panel" transform="translate(0, ${currentY})">\n`;
+              svg += `    <path d="${generateTopBottomPanel(topBottomW, topBottomD, dims.sidePanelWidth)}" class="cut-line" />\n`;
+              svg += `  </g>\n`;
+
+              svg += `  <g id="bottom-panel" transform="translate(${topBottomW + spacing}, ${currentY})">\n`;
+              svg += `    <path d="${generateTopBottomPanel(topBottomW, topBottomD, dims.sidePanelWidth)}" class="cut-line" />\n`;
+              svg += `  </g>\n`;
+
+              svg += `  <g id="back-panel" transform="translate(${2 * topBottomW + 2 * spacing}, ${currentY})">\n`;
+              svg += `    <path d="${generateBackPanel(dims.exteriorWidth, dims.backPanelHeight, dims.slotPositions)}" class="cut-line" />\n`;
+              svg += `  </g>\n`;
+            }
+
+            svg += `</svg>`;
+            return svg;
+          }, [dims, shelfMode, materialThickness, units, convertFromInches, generateOpenSidePanel, generateEnclosedSidePanel, generateShelf, generateEnclosedShelf, generateTopBottomPanel, generateBackPanel]);
+
+          // ===== BED CHECK =====
+          const checkBedFit = useCallback(() => {
+            const pieces = [
+              { name: 'Side panel', width: dims.sidePanelWidth, height: dims.sidePanelHeight },
+              { name: 'Shelf', width: dims.shelfPieceWidth + 2 * materialThickness, height: dims.shelfPieceDepth + (shelfMode === 'enclosed' ? materialThickness : 0) }
+            ];
+            if (shelfMode === 'enclosed') {
+              pieces.push({ name: 'Top/Bottom panel', width: dims.exteriorWidth, height: dims.interiorDepth + materialThickness });
+              pieces.push({ name: 'Back panel', width: dims.exteriorWidth, height: dims.backPanelHeight });
+            }
+            const largest = pieces.reduce((max, p) =>
+              (p.width * p.height > max.width * max.height) ? p : max
+            );
+            const fitsNormal = largest.width <= bedSize.width && largest.height <= bedSize.height;
+            const fitsRotated = largest.height <= bedSize.width && largest.width <= bedSize.height;
+            const fits = fitsNormal || fitsRotated;
+            const tight = fits && (
+              Math.min(bedSize.width - largest.width, bedSize.height - largest.height) < 0.5 ||
+              Math.min(bedSize.width - largest.height, bedSize.height - largest.width) < 0.5
+            );
+            return { fits, tight, largest };
+          }, [dims, bedSize, shelfMode, materialThickness]);
+
+          // ===== DOWNLOAD =====
+          const downloadSVG = () => {
+            gtag('event', 'download_svg', { 'tool_name': 'display_shelf_designer' });
+            const svgContent = generateSVG();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const sanitizedFilename = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'display-shelf';
+            link.download = `${sanitizedFilename}-${shelfMode}.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          // ===== INPUT HANDLERS =====
+          const handleWidthChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setShelfWidth(convertToInches(n)); };
+          const handleDepthChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setShelfDepth(convertToInches(n)); };
+          const handleEvenSpacingChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setEvenSpacing(convertToInches(n)); };
+          const handleBottomTierChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setBottomTierHeight(convertToInches(n)); };
+          const handleOpenBottomTierChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n >= 0.5) setOpenBottomTier(convertToInches(n)); };
+          const handleTopExtensionChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setTopExtension(convertToInches(n)); };
+          const handleThicknessChange = (value) => { const n = parseFloat(value); if (!isNaN(n) && n > 0) setMaterialThickness(convertToInches(n)); };
+
+          const bedCheck = checkBedFit();
+
+          // dims.numShelves = partition pieces to cut (in enclosed mode, box bottom is a shelf surface)
+          const totalPieces = 2 + dims.numShelves + (shelfMode === 'enclosed' ? 3 : 0);
+
+          // ===== RENDER =====
+          return (
+            <div className="max-w-7xl mx-auto p-6 bg-white">
+              <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Display Shelf Designer</h1>
+              <p className="text-center text-gray-600 mb-1">Create custom display shelves for miniatures and collectibles</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v1.0.0</p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Settings Column */}
+                <div className="space-y-6">
+
+                  {/* Shelf Mode */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Shelf Mode</h2>
+                    <div className="space-y-3">
+                      <label className="flex items-start cursor-pointer">
+                        <input type="radio" checked={shelfMode === 'open'} onChange={() => setShelfMode('open')} className="mr-3 mt-1" />
+                        <div>
+                          <span className="font-medium">Open Riser</span>
+                          <p className="text-xs text-gray-500">Side panels + shelves only. Open front, back, and top.</p>
+                        </div>
+                      </label>
+                      <label className="flex items-start cursor-pointer">
+                        <input type="radio" checked={shelfMode === 'enclosed'} onChange={() => setShelfMode('enclosed')} className="mr-3 mt-1" />
+                        <div>
+                          <span className="font-medium">Enclosed Shelf</span>
+                          <p className="text-xs text-gray-500">Full box with shelves inside. Open front.</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Dimension Mode */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Dimension Mode</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={dimensionMode === 'interior'} onChange={() => setDimensionMode('interior')} className="mr-2" />
+                        <span>Interior</span>
+                      </label>
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={dimensionMode === 'exterior'} onChange={() => setDimensionMode('exterior')} className="mr-2" />
+                        <span>Exterior</span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {dimensionMode === 'interior'
+                        ? 'Specify usable interior dimensions. Tool calculates exterior.'
+                        : 'Specify overall exterior dimensions. Tool calculates interior.'}
+                    </p>
+                  </div>
+
+                  {/* Units */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Units</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'inches'} onChange={() => setUnits('inches')} className="mr-2" />
+                        <span>Inches</span>
+                      </label>
+                      <label className="flex items-center cursor-pointer">
+                        <input type="radio" checked={units === 'mm'} onChange={() => setUnits('mm')} className="mr-2" />
+                        <span>Millimeters</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Shelf Dimensions */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Shelf Dimensions</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">{dimensionMode === 'interior' ? 'Interior' : 'Exterior'} Width ({units})</label>
+                        <input type="number" value={widthInput} onChange={(e) => { setWidthInput(e.target.value); handleWidthChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Left-to-right shelf span</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">{dimensionMode === 'interior' ? 'Interior' : 'Exterior'} Depth ({units})</label>
+                        <input type="number" value={depthInput} onChange={(e) => { setDepthInput(e.target.value); handleDepthChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                        <p className="text-xs text-gray-500 mt-1">Front-to-back shelf depth</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">
+                          {shelfMode === 'enclosed' ? 'Number of Shelf Surfaces' : 'Number of Shelves'}
+                        </label>
+                        <select value={numShelves} onChange={(e) => setNumShelves(parseInt(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                          {(shelfMode === 'enclosed' ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(n => (
+                            <option key={n} value={n}>{n} {shelfMode === 'enclosed' ? (n === 1 ? 'surface' : 'surfaces') : (n === 1 ? 'shelf' : 'shelves')}</option>
+                          ))}
+                        </select>
+                        {shelfMode === 'enclosed' && (
+                          <p className="text-xs text-gray-500 mt-1">Box floor counts as the first surface</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Shelf Spacing */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Shelf Spacing</h2>
+                    <div className="space-y-4">
+                      {(() => {
+                        // In enclosed mode, spacing always applies (even 1 surface has a floor-to-top gap)
+                        // In open mode, spacing only applies with 2+ shelves
+                        const numGaps = shelfMode === 'enclosed' ? numShelves : numShelves - 1;
+                        const showSpacingControls = numGaps > 0;
+                        const showModeToggle = shelfMode === 'enclosed' ? numGaps > 1 : numGaps > 0;
+
+                        return (
+                          <>
+                            {showModeToggle && (
+                              <div className="flex gap-4 mb-2">
+                                <label className="flex items-center cursor-pointer">
+                                  <input type="radio" checked={spacingMode === 'even'} onChange={() => setSpacingMode('even')} className="mr-2" />
+                                  <span>Even spacing</span>
+                                </label>
+                                <label className="flex items-center cursor-pointer">
+                                  <input type="radio" checked={spacingMode === 'custom'} onChange={() => { setSpacingMode('custom'); setCustomSpacings(Array(numGaps).fill(evenSpacing)); setCustomSpacingInputs(Array(numGaps).fill(formatUnit(convertFromInches(evenSpacing)))); }} className="mr-2" />
+                                  <span>Custom per tier</span>
+                                </label>
+                              </div>
+                            )}
+
+                            {showSpacingControls && spacingMode === 'even' && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">
+                                  {shelfMode === 'enclosed' ? 'Tier Height' : 'Spacing Between Shelves'} ({units})
+                                </label>
+                                <input type="number" value={evenSpacingInput} onChange={(e) => { setEvenSpacingInput(e.target.value); handleEvenSpacingChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                                {shelfMode === 'enclosed' && (
+                                  <p className="text-xs text-gray-500 mt-1">Height of each display space (all {numShelves} tiers equal)</p>
+                                )}
+                              </div>
+                            )}
+
+                            {showSpacingControls && spacingMode === 'custom' && (
+                              <div className="space-y-2 pl-4 border-l-2 border-indigo-200">
+                                <p className="text-sm font-medium text-gray-600">Individual Tier Heights:</p>
+                                {customSpacingInputs.map((val, i) => {
+                                  let label;
+                                  if (shelfMode === 'enclosed') {
+                                    const partitions = numShelves - 1;
+                                    if (i < partitions) {
+                                      label = i === 0 ? `Floor to Partition 1` : `Partition ${i} to Partition ${i + 1}`;
+                                    } else {
+                                      label = partitions === 0 ? `Floor to Top` : `Partition ${partitions} to Top`;
+                                    }
+                                  } else {
+                                    label = `Shelf ${i + 1} to Shelf ${i + 2}`;
+                                  }
+                                  return (
+                                    <div key={i}>
+                                      <label className="block text-xs text-gray-500">{label} ({units})</label>
+                                      <input type="number" value={val} onChange={(e) => {
+                                        const newInputs = [...customSpacingInputs];
+                                        newInputs[i] = e.target.value;
+                                        setCustomSpacingInputs(newInputs);
+                                        const numVal = parseFloat(e.target.value);
+                                        if (!isNaN(numVal) && numVal > 0) {
+                                          const newSpacings = [...customSpacings];
+                                          newSpacings[i] = convertToInches(numVal);
+                                          setCustomSpacings(newSpacings);
+                                        }
+                                      }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+
+                      {shelfMode === 'open' && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-1">Bottom Shelf Height ({units})</label>
+                            <input type="number" value={openBottomTierInput} onChange={(e) => { setOpenBottomTierInput(e.target.value); handleOpenBottomTierChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} min={units === 'mm' ? '12.7' : '0.5'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                            <p className="text-xs text-gray-500 mt-1">How high the bottom shelf sits above the base (min 0.5")</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-1">Top Extension ({units})</label>
+                            <input type="number" value={topExtensionInput} onChange={(e) => { setTopExtensionInput(e.target.value); handleTopExtensionChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                            <p className="text-xs text-gray-500 mt-1">How far side panels extend above the top shelf</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <p className="text-sm font-medium text-gray-700">
+                        Total height: {formatUnit(convertFromInches(shelfMode === 'enclosed' ? dims.exteriorHeight : dims.sidePanelHeight))} {units}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Material Thickness (copied from card-box-designer) */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Thickness</h2>
+                    <div className="mb-3">
+                      <select value={materialPreset} onChange={(e) => { setMaterialPreset(e.target.value); if (e.target.value !== 'custom') setCustomThickness(''); }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        {units === 'inches' ? (
+                          <>
+                            <option value="0.125">1/8" (0.125")</option>
+                            <option value="0.118">Nominal 1/8" (0.118")</option>
+                            <option value="0.25">1/4" (0.250")</option>
+                            <option value="0.236">Nominal 1/4" (0.236")</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="3.0">3.0mm</option>
+                            <option value="3.175">3.175mm (1/8")</option>
+                            <option value="6.0">6.0mm</option>
+                            <option value="6.35">6.35mm (1/4")</option>
+                          </>
+                        )}
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {materialPreset === 'custom' && (
+                      <div>
+                        <input type="number" value={customThickness} onChange={(e) => { setCustomThickness(e.target.value); handleThicknessChange(e.target.value); }} placeholder={`Enter thickness in ${units}`} step={units === 'mm' ? '0.1' : '0.001'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">Current: {formatUnit(convertFromInches(materialThickness))} {units}</p>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Summary</h2>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <p><strong>Side panels (x2):</strong> {formatUnit(convertFromInches(dims.sidePanelWidth + (shelfMode === 'enclosed' ? materialThickness : 0)))} x {formatUnit(convertFromInches(dims.sidePanelHeight + (shelfMode === 'enclosed' ? 2 * materialThickness : 0)))} {units}</p>
+                      <p><strong>{shelfMode === 'enclosed' ? 'Partitions' : 'Shelves'} (x{dims.numShelves}):</strong> {formatUnit(convertFromInches(dims.shelfPieceWidth + 2 * materialThickness))} x {formatUnit(convertFromInches(dims.shelfPieceDepth + (shelfMode === 'enclosed' ? materialThickness : 0)))} {units}</p>
+                      {shelfMode === 'enclosed' && (
+                        <>
+                          <p><strong>Top/Bottom (x2):</strong> {formatUnit(convertFromInches(dims.exteriorWidth))} x {formatUnit(convertFromInches(dims.interiorDepth + materialThickness))} {units}</p>
+                          <p><strong>Back panel (x1):</strong> {formatUnit(convertFromInches(dims.exteriorWidth))} x {formatUnit(convertFromInches(dims.backPanelHeight))} {units}</p>
+                        </>
+                      )}
+                      <p><strong>{shelfMode === 'enclosed' ? 'Surfaces' : 'Shelves'}:</strong> {shelfMode === 'enclosed' ? numShelves : dims.numShelves}{shelfMode === 'enclosed' ? ` (box floor + ${dims.numShelves} partition${dims.numShelves !== 1 ? 's' : ''})` : ''}</p>
+                      <p><strong>Total pieces:</strong> {totalPieces} (2 sides + {dims.numShelves} {shelfMode === 'enclosed' ? 'partitions' : 'shelves'}{shelfMode === 'enclosed' ? ' + top + bottom + back' : ''})</p>
+                    </div>
+                  </div>
+
+                  {/* Material Size Check (copied from card-box-designer) */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Size Check</h2>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Your Material or Laser Bed Size</label>
+                      <select value={bedPreset} onChange={(e) => { setBedPreset(e.target.value); if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x').map(Number); setBedSize({ width: w, height: h }); } }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        <option value="12x12">12" x 12"</option>
+                        <option value="12x20">12" x 20"</option>
+                        <option value="20x28">20" x 28"</option>
+                        <option value="24x36">24" x 36"</option>
+                        <option value="40x28">40" x 28"</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    {bedPreset === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        <input type="number" placeholder="Width" value={customBedWidth} onChange={(e) => { setCustomBedWidth(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, width: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                        <input type="number" placeholder="Height" value={customBedHeight} onChange={(e) => { setCustomBedHeight(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, height: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <div className={`rounded p-3 border ${bedCheck.fits ? (bedCheck.tight ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200') : 'bg-red-50 border-red-200'}`}>
+                      <p className={`font-semibold ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-800' : 'text-green-800') : 'text-red-800'}`}>
+                        {bedCheck.fits ? (bedCheck.tight ? '⚠️ Tight fit - verify carefully' : '✅ All pieces fit') : '🚫 Won\'t fit!'}
+                      </p>
+                      <p className={`text-sm ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-700' : 'text-green-700') : 'text-red-700'}`}>
+                        Largest: {bedCheck.largest.width.toFixed(2)}" x {bedCheck.largest.height.toFixed(2)}" ({bedCheck.largest.name})
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Color Guide */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm">
+                    <h3 className="font-semibold text-gray-700 mb-2">SVG Color Guide</h3>
+                    <div className="space-y-1 text-gray-600">
+                      <p>Red = Cut lines</p>
+                    </div>
+                  </div>
+
+                  {/* Filename */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Filename</h2>
+                    <div className="flex items-center">
+                      <input type="text" value={filename} onChange={(e) => setFilename(e.target.value)} placeholder="e.g., mini-display" className="flex-1 px-3 py-2 border border-gray-300 rounded-l" />
+                      <span className="px-3 py-2 bg-gray-200 border border-l-0 border-gray-300 rounded-r text-gray-600">.svg</span>
+                    </div>
+                  </div>
+
+                  {/* Download */}
+                  <div className="space-y-3">
+                    <button onClick={downloadSVG} className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg hover:bg-indigo-700 transition-colors font-semibold">
+                      Download SVG
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview Column */}
+                <div className="space-y-4">
+
+                  {/* Front View */}
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-700">Front View</h2>
+                    <select value={frontZoom} onChange={(e) => setFrontZoom(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '600px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                    <div className="text-center mb-4">
+                      <p className="text-sm text-gray-600 font-semibold">Assembled Front View</p>
+                      <p className="text-xs text-gray-500">Shows how the shelf looks from the front</p>
+                    </div>
+                    {(() => {
+                      const extW = dims.exteriorWidth;
+                      const sph = dims.sidePanelHeight;
+                      const totalH = shelfMode === 'enclosed' ? dims.exteriorHeight : sph;
+                      const viewW = extW + 2;
+                      const viewH = totalH + 2;
+
+                      return (
+                        <svg
+                          width={`${viewW * 60 * frontZoom}px`}
+                          height={`${viewH * 60 * frontZoom}px`}
+                          viewBox={`-1 -1 ${viewW} ${viewH}`}
+                          style={{ background: '#f9fafb', display: 'block', margin: '0 auto' }}
+                        >
+                          {shelfMode === 'enclosed' && (
+                            <>
+                              {/* Top panel */}
+                              <rect x="0" y="0" width={extW} height={materialThickness} fill="#a3a3a3" />
+                              {/* Bottom panel */}
+                              <rect x="0" y={totalH - materialThickness} width={extW} height={materialThickness} fill="#a3a3a3" />
+                            </>
+                          )}
+
+                          {/* Left side panel */}
+                          <rect
+                            x={0}
+                            y={shelfMode === 'enclosed' ? materialThickness : 0}
+                            width={materialThickness}
+                            height={sph}
+                            fill="#a3a3a3"
+                          />
+                          {/* Right side panel */}
+                          <rect
+                            x={extW - materialThickness}
+                            y={shelfMode === 'enclosed' ? materialThickness : 0}
+                            width={materialThickness}
+                            height={sph}
+                            fill="#a3a3a3"
+                          />
+
+                          {/* Shelves */}
+                          {dims.slotPositions.map((slotY, i) => {
+                            const svgY = (shelfMode === 'enclosed' ? materialThickness : 0) + sph - slotY - materialThickness;
+                            return (
+                              <rect
+                                key={`shelf-${i}`}
+                                x={materialThickness}
+                                y={svgY}
+                                width={dims.shelfPieceWidth}
+                                height={materialThickness}
+                                fill="#f3e5ab"
+                              />
+                            );
+                          })}
+
+                          {/* Dimension labels for tier spacings */}
+                          {dims.tierSpacings.map((sp, i) => {
+                            const offset = shelfMode === 'enclosed' ? materialThickness : 0;
+                            let topEdge, bottomEdge;
+                            if (shelfMode === 'enclosed') {
+                              const partitions = dims.slotPositions.length;
+                              // topEdge = bottom of this tier (in SVG Y, higher = lower on screen)
+                              // bottomEdge = top of this tier
+                              if (i < partitions) {
+                                // Gap below partition i: floor (or previous partition top) to partition i bottom
+                                topEdge = i === 0 ? (offset + sph) : (offset + sph - dims.slotPositions[i - 1]);
+                                bottomEdge = offset + sph - dims.slotPositions[i] - materialThickness;
+                              } else {
+                                // Top tier: last partition top to top of interior
+                                topEdge = offset + sph - dims.slotPositions[partitions - 1];
+                                bottomEdge = offset;
+                              }
+                            } else {
+                              // Space between shelf i (top) and shelf i+1 (bottom)
+                              topEdge = offset + sph - dims.slotPositions[i] - materialThickness;
+                              bottomEdge = offset + sph - dims.slotPositions[i + 1];
+                            }
+                            const midY = (topEdge + bottomEdge) / 2;
+                            return (
+                              <text
+                                key={`spacing-${i}`}
+                                x={extW / 2}
+                                y={midY}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fontSize={Math.min(sp, 0.5) * 0.6}
+                                fill="#666"
+                              >
+                                {formatUnit(convertFromInches(sp))}
+                              </text>
+                            );
+                          })}
+
+                          {/* Overall width dimension */}
+                          <text
+                            x={extW / 2}
+                            y={totalH + 0.5}
+                            textAnchor="middle"
+                            fontSize="0.3"
+                            fill="#333"
+                          >
+                            {formatUnit(convertFromInches(extW))} {units} wide
+                          </text>
+
+                          {/* Overall height dimension */}
+                          <text
+                            x={extW + 0.5}
+                            y={totalH / 2}
+                            textAnchor="middle"
+                            fontSize="0.3"
+                            fill="#333"
+                            transform={`rotate(90, ${extW + 0.5}, ${totalH / 2})`}
+                          >
+                            {formatUnit(convertFromInches(totalH))} {units} tall
+                          </text>
+                        </svg>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Assembly notes */}
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p><strong>Assembly:</strong></p>
+                    {shelfMode === 'open' ? (
+                      <>
+                        <p>• Slide shelf tabs into side panel slots</p>
+                        <p>• Shelves hold the side panels together</p>
+                      </>
+                    ) : (
+                      <>
+                        <p>• Assemble box frame using tab-and-notch joints (sides, top, bottom, back)</p>
+                        <p>• Slide shelves into side panel slots</p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Unfolded Box Preview (enclosed mode only) */}
+                  {shelfMode === 'enclosed' && (
+                    <>
+                      <div className="flex items-center justify-between mt-6">
+                        <div className="text-center flex-1">
+                          <p className="text-sm text-gray-600 font-semibold">Box Construction (Unfolded)</p>
+                          <p className="text-xs text-gray-500">Top, Bottom, Left, Right walls + Back</p>
+                        </div>
+                        <select value={boxZoomLevel} onChange={(e) => setBoxZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                          <option value={0.25}>25%</option>
+                          <option value={0.5}>50%</option>
+                          <option value={1}>100%</option>
+                          <option value={1.5}>150%</option>
+                          <option value={2}>200%</option>
+                        </select>
+                      </div>
+                      <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '400px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                        {(() => {
+                          // Unfolded layout for display shelf enclosed mode:
+                          //   Center = back panel (centerW x centerH)
+                          //   Above = top panel (centerW x tbDepth), tabs on bottom edge face down toward back panel
+                          //   Below = bottom panel (centerW x tbDepth), rotated 180° so tabs face up toward back panel
+                          //   Left = side panel (sideW x sideH), placed directly left, right-edge tabs face center
+                          //   Right = side panel mirrored, so right-edge tabs face center (left in mirrored view)
+                          const centerW = dims.exteriorWidth;
+                          const centerH = dims.backPanelHeight;  // back panel = interiorHeight + 2*mt
+                          const tbDepth = dims.interiorDepth;    // top/bottom panel depth
+                          const sideW = dims.sidePanelWidth;     // side panel body width
+                          const sideH = dims.sidePanelHeight;    // side panel body height (= interiorHeight)
+                          const mt = materialThickness;
+                          const gap = 0.25;
+
+                          // Side panels: body = sideW x sideH, tabs protrude outward
+                          // Back-edge tab protrudes by mt in width, top/bottom tabs protrude by mt each in height
+                          const sideBBoxW = sideW + mt; // body + back-edge tab protrusion
+                          const sideBBoxH = sideH + 2 * mt; // body + top/bottom tab protrusions
+
+                          // Layout coordinates
+                          // The side panel total height (sideBBoxH) = sideH + 2*mt = centerH
+                          // so side panels and back panel are the same total height ✓
+                          const leftSideX = 0;
+                          const centerX = sideBBoxW + gap;
+                          const rightSideX = centerX + centerW + gap;
+                          // Top panel body: 0 to tbDepth, tab tip at tbDepth + mt
+                          // Side panel top tab tip at middleRowY - mt (protrudes above body)
+                          // Gap between: middleRowY - mt - (tbDepth + mt) = gap
+                          const middleRowY = tbDepth + 2 * mt + gap;
+                          const topPanelY = 0;
+
+                          const totalW = rightSideX + sideBBoxW;
+                          // Bottom panel rotated 180°: translate Y is at the very bottom
+                          const totalH = middleRowY + centerH + gap + mt + tbDepth + mt;
+
+                          const sidePanelPath = generateEnclosedSidePanel(sideW, sideH, dims.slotPositions);
+
+                          return (
+                            <svg
+                              width={`${(totalW + 1) * 48 * boxZoomLevel}px`}
+                              height={`${(totalH + 1) * 48 * boxZoomLevel}px`}
+                              viewBox={`-0.5 -0.5 ${totalW + 1} ${totalH + 1}`}
+                              style={{ background: '#f9fafb', display: 'block' }}
+                            >
+                              <defs>
+                                <style>{`.box-cut { stroke: #dc2626; stroke-width: 0.02; fill: #f3e5ab; } .box-label { fill: #666; font-family: Arial; font-size: 0.25px; }`}</style>
+                              </defs>
+
+                              {/* Top panel (above back panel)
+                                  Native orientation: plain top (front), notches on left/right, tabs on bottom (back edge) pointing down.
+                                  Tabs at bottom point down toward the back panel below. Correct as-is. */}
+                              <g transform={`translate(${centerX}, ${topPanelY})`}>
+                                <path d={generateTopBottomPanel(centerW, tbDepth, sideW)} className="box-cut" />
+                                <text className="box-label" x={centerW / 2} y={-0.15} textAnchor="middle">Top</text>
+                              </g>
+
+                              {/* Middle row: Left Side, Back Panel, Right Side */}
+
+                              {/* Left side panel - NO rotation needed
+                                  Body starts at middleRowY + mt so top tab tip aligns with back panel top.
+                                  Right edge tabs point +X toward center back panel ✓
+                                  Top edge tabs point -Y toward top panel ✓
+                                  Bottom edge tabs point +Y toward bottom panel ✓ */}
+                              <g transform={`translate(${leftSideX}, ${middleRowY + mt})`}>
+                                <path d={sidePanelPath} className="box-cut" />
+                                <text className="box-label" x={sideW / 2} y={-mt - 0.2} textAnchor="middle">Left</text>
+                              </g>
+
+                              {/* Back panel (center) */}
+                              <g transform={`translate(${centerX}, ${middleRowY})`}>
+                                <path d={generateBackPanel(centerW, centerH, dims.slotPositions)} className="box-cut" />
+                                <text className="box-label" x={centerW / 2} y={centerH / 2} textAnchor="middle" dominantBaseline="middle">Back</text>
+                              </g>
+
+                              {/* Right side panel - mirrored horizontally
+                                  scale(-1,1) flips so right-edge tabs now face left toward center ✓
+                                  Top/bottom tabs unchanged ✓ */}
+                              <g transform={`translate(${rightSideX + sideBBoxW}, ${middleRowY + mt}) scale(-1, 1)`}>
+                                <path d={sidePanelPath} className="box-cut" />
+                                <text className="box-label" x={sideW / 2} y={-mt - 0.2} textAnchor="middle" transform={`scale(-1, 1) translate(${-sideW}, 0)`}>Right</text>
+                              </g>
+
+                              {/* Bottom panel (below back panel)
+                                  Rotated 180° so tabs (on back edge) point up toward back panel. */}
+                              <g transform={`translate(${centerX + centerW}, ${middleRowY + centerH + gap + mt + tbDepth + mt}) rotate(180)`}>
+                                <path d={generateTopBottomPanel(centerW, tbDepth, sideW)} className="box-cut" />
+                                <text className="box-label" x={centerW / 2} y={tbDepth / 2} textAnchor="middle" dominantBaseline="middle" transform={`rotate(180, ${centerW / 2}, ${tbDepth / 2})`}>Bottom</text>
+                              </g>
+                            </svg>
+                          );
+                        })()}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Cut Layout Preview */}
+                  <div className="flex items-center justify-between mt-6">
+                    <div className="text-center flex-1">
+                      <p className="text-sm text-gray-600 font-semibold">Cut Layout</p>
+                      <p className="text-xs text-gray-500">All pieces as they appear in the downloaded SVG</p>
+                    </div>
+                    <select value={cutZoom} onChange={(e) => setCutZoom(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.25}>25%</option>
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '400px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+                    {(() => {
+                      const tabDepth = materialThickness;
+                      const spacing = 0.25;
+
+                      const sideBBox = shelfMode === 'open'
+                        ? { w: dims.sidePanelWidth, h: dims.sidePanelHeight }
+                        : { w: dims.sidePanelWidth + tabDepth, h: dims.sidePanelHeight + 2 * tabDepth };
+
+                      const shelfBBox = shelfMode === 'enclosed'
+                        ? { w: dims.shelfPieceWidth + 2 * tabDepth, h: dims.shelfPieceDepth + tabDepth }
+                        : { w: dims.shelfPieceWidth + 2 * tabDepth, h: dims.shelfPieceDepth };
+
+                      const row1Width = 2 * sideBBox.w + spacing;
+                      const row1Height = sideBBox.h;
+
+                      const maxRowWidth = Math.max(row1Width, 20);
+                      const shelvesPerRow = Math.max(1, Math.floor(maxRowWidth / (shelfBBox.w + spacing)));
+                      const shelfRows = Math.ceil(dims.numShelves / shelvesPerRow);
+                      const row2Height = shelfRows * shelfBBox.h + (shelfRows - 1) * spacing;
+                      const row2Width = shelvesPerRow * shelfBBox.w + (shelvesPerRow - 1) * spacing;
+
+                      let row3Height = 0, row3Width = 0;
+                      if (shelfMode === 'enclosed') {
+                        const topBottomBBox = { w: dims.exteriorWidth, h: dims.interiorDepth + materialThickness };
+                        const backBBox = { w: dims.exteriorWidth, h: dims.backPanelHeight };
+                        row3Width = 2 * topBottomBBox.w + spacing + backBBox.w + 2 * spacing;
+                        row3Height = Math.max(topBottomBBox.h, backBBox.h);
+                      }
+
+                      const totalWidth = Math.max(row1Width, row2Width, row3Width);
+                      const totalHeight = row1Height + spacing + row2Height + (shelfMode === 'enclosed' ? spacing + row3Height : 0);
+
+                      const sidePath = shelfMode === 'open'
+                        ? generateOpenSidePanel(dims.sidePanelWidth, dims.sidePanelHeight, dims.slotPositions)
+                        : generateEnclosedSidePanel(dims.sidePanelWidth, dims.sidePanelHeight, dims.slotPositions);
+
+                      const sideOffsetY = shelfMode === 'enclosed' ? tabDepth : 0;
+
+                      return (
+                        <svg
+                          width={`${(totalWidth + 1) * 96 * cutZoom}px`}
+                          height={`${(totalHeight + 1) * 96 * cutZoom}px`}
+                          viewBox={`-0.5 -0.5 ${totalWidth + 1} ${totalHeight + 1}`}
+                          style={{ background: '#f9fafb', display: 'block' }}
+                        >
+                          <defs>
+                            <style>{`.cut-prev { stroke: #dc2626; stroke-width: 0.02; fill: none; } .cut-label { fill: #10b981; font-family: Arial; font-size: 0.25px; }`}</style>
+                          </defs>
+
+                          {/* Row 1: Side panels */}
+                          <g transform={`translate(0, ${sideOffsetY})`}>
+                            <path d={sidePath} className="cut-prev" />
+                            <text className="cut-label" x={dims.sidePanelWidth / 2} y={-0.3 - sideOffsetY} textAnchor="middle">Left Side</text>
+                          </g>
+                          <g transform={`translate(${sideBBox.w + spacing}, ${sideOffsetY})`}>
+                            <path d={sidePath} className="cut-prev" />
+                            <text className="cut-label" x={dims.sidePanelWidth / 2} y={-0.3 - sideOffsetY} textAnchor="middle">Right Side</text>
+                          </g>
+
+                          {/* Row 2+: Shelves (enclosed mode partitions get back-edge tabs) */}
+                          {Array.from({ length: dims.numShelves }).map((_, i) => {
+                            const row = Math.floor(i / shelvesPerRow);
+                            const col = i % shelvesPerRow;
+                            const dx = col * (shelfBBox.w + spacing) + tabDepth;
+                            const dy = row1Height + spacing + row * (shelfBBox.h + spacing) + (shelfMode === 'enclosed' ? tabDepth : 0);
+                            const shelfPath = shelfMode === 'enclosed'
+                              ? generateEnclosedShelf(dims.shelfPieceWidth, dims.shelfPieceDepth)
+                              : generateShelf(dims.shelfPieceWidth, dims.shelfPieceDepth);
+                            return (
+                              <g key={`shelf-${i}`} transform={`translate(${dx}, ${dy})`}>
+                                <path d={shelfPath} className="cut-prev" />
+                                <text className="cut-label" x={dims.shelfPieceWidth / 2} y={-0.2 - (shelfMode === 'enclosed' ? tabDepth : 0)} textAnchor="middle">Shelf {i + 1}</text>
+                              </g>
+                            );
+                          })}
+
+                          {/* Row 3 (enclosed): Top, Bottom, Back */}
+                          {shelfMode === 'enclosed' && (() => {
+                            const y3 = row1Height + spacing + row2Height + spacing;
+                            return (
+                              <>
+                                <g transform={`translate(0, ${y3})`}>
+                                  <path d={generateTopBottomPanel(dims.exteriorWidth, dims.interiorDepth, dims.sidePanelWidth)} className="cut-prev" />
+                                  <text className="cut-label" x={dims.exteriorWidth / 2} y={-0.2} textAnchor="middle">Top</text>
+                                </g>
+                                <g transform={`translate(${dims.exteriorWidth + spacing}, ${y3})`}>
+                                  <path d={generateTopBottomPanel(dims.exteriorWidth, dims.interiorDepth, dims.sidePanelWidth)} className="cut-prev" />
+                                  <text className="cut-label" x={dims.exteriorWidth / 2} y={-0.2} textAnchor="middle">Bottom</text>
+                                </g>
+                                <g transform={`translate(${2 * dims.exteriorWidth + 2 * spacing}, ${y3})`}>
+                                  <path d={generateBackPanel(dims.exteriorWidth, dims.backPanelHeight, dims.slotPositions)} className="cut-prev" />
+                                  <text className="cut-label" x={dims.exteriorWidth / 2} y={-0.2} textAnchor="middle">Back</text>
+                                </g>
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      );
+                    })()}
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<DisplayShelfDesigner />, document.getElementById('root'));
+    </script>
+</body>
+</html>

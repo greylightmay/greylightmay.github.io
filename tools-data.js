@@ -143,5 +143,33 @@ const toolsData = [
     ],
     imageOverlay: "Organize your cards perfectly →",
     fallbackEmoji: "🃏"
+  },
+  {
+    id: "display-shelf",
+    name: "Display Shelf Designer",
+    subtitle: "Custom display shelves for miniatures and collectibles",
+    description: "Create custom laser-cut display shelves with adjustable shelf spacing. Choose between open risers or enclosed shelving with tab-and-slot construction.",
+    image: "img/display-shelf.png",
+    imageAlt: "Laser-cut display shelf with miniatures",
+    link: "display-shelf-designer.html",
+    videoId: "XRzJhi8uWMY",
+    videoTitle: "Display Shelf Designer",
+    colorScheme: {
+      gradient: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
+      background: "#312e81",
+      featureBox: "#eef2ff",
+      featureTitle: "#312e81",
+      featureText: "#4338ca",
+      subtitleText: "#c7d2fe",
+      buttonGradient: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)"
+    },
+    features: [
+      "Two modes: Open Riser or Enclosed Shelf",
+      "Even or custom shelf spacing per tier",
+      "Interior or exterior dimension modes",
+      "Standard tab-and-slot construction"
+    ],
+    imageOverlay: "Design custom display shelves →",
+    fallbackEmoji: "🗄️"
   }
 ];
