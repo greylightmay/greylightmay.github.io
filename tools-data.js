@@ -1,6 +1,7 @@
 // tools-data.js
 // Tool card data for GreyLightning landing page
-// To add a new tool, add a new object to this array
+// To add a new tool, append a new object to the END of this array.
+// The list is reversed at the bottom so the newest tools appear first on the page.
 
 const toolsData = [
   {
@@ -14,13 +15,13 @@ const toolsData = [
     videoId: "kBOiYGWKti8",
     videoTitle: "Living Hinge Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-      background: "#1e3a8a",
-      featureBox: "#eff6ff",
-      featureTitle: "#1e3a8a",
-      featureText: "#1e40af",
-      subtitleText: "#bfdbfe",
-      buttonGradient: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)"
+      gradient: "linear-gradient(135deg, #eab308 0%, #a16207 100%)",
+      background: "#713f12",
+      featureBox: "#fefce8",
+      featureTitle: "#713f12",
+      featureText: "#854d0e",
+      subtitleText: "#fef08a",
+      buttonGradient: "linear-gradient(135deg, #ca8a04 0%, #854d0e 100%)"
     },
     features: [
       "Standard kerf brick pattern (tested & proven)",
@@ -42,13 +43,13 @@ const toolsData = [
     videoId: "X97rBVJDnj8",
     videoTitle: "Candle Shade Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)",
-      background: "#292524",
+      gradient: "linear-gradient(135deg, #f59e0b 0%, #92400e 100%)",
+      background: "#78350f",
       featureBox: "#fffbeb",
       featureTitle: "#78350f",
       featureText: "#92400e",
-      subtitleText: "#fed7aa",
-      buttonGradient: "linear-gradient(135deg, #d97706 0%, #ea580c 100%)"
+      subtitleText: "#fde68a",
+      buttonGradient: "linear-gradient(135deg, #d97706 0%, #92400e 100%)"
     },
     features: [
       "Living hinge pattern for wrapping",
@@ -70,13 +71,13 @@ const toolsData = [
     videoId: "uhBEGo6jVJw",
     videoTitle: "5 Sided Box Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-      background: "#065f46",
-      featureBox: "#ecfdf5",
-      featureTitle: "#065f46",
-      featureText: "#047857",
-      subtitleText: "#d1fae5",
-      buttonGradient: "linear-gradient(135deg, #059669 0%, #047857 100%)"
+      gradient: "linear-gradient(135deg, #92400e 0%, #451a03 100%)",
+      background: "#1c1917",
+      featureBox: "#fffbeb",
+      featureTitle: "#451a03",
+      featureText: "#78350f",
+      subtitleText: "#fcd34d",
+      buttonGradient: "linear-gradient(135deg, #78350f 0%, #451a03 100%)"
     },
     features: [
       "Optional fitted lid with adjustable clearance",
@@ -98,13 +99,13 @@ const toolsData = [
     videoId: "9c71lOW8Zwk",
     videoTitle: "Divider Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)",
-      background: "#115e59",
-      featureBox: "#f0fdfa",
-      featureTitle: "#115e59",
-      featureText: "#0f766e",
-      subtitleText: "#ccfbf1",
-      buttonGradient: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)"
+      gradient: "linear-gradient(135deg, #ea580c 0%, #7c2d12 100%)",
+      background: "#431407",
+      featureBox: "#fff7ed",
+      featureTitle: "#7c2d12",
+      featureText: "#9a3412",
+      subtitleText: "#fed7aa",
+      buttonGradient: "linear-gradient(135deg, #c2410c 0%, #7c2d12 100%)"
     },
     features: [
       "Cross-lap joinery - interlocks without glue",
@@ -127,13 +128,13 @@ const toolsData = [
     videoId: "c6c1s7iRd8s",
     videoTitle: "Card Box Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #e11d48 0%, #be123c 100%)",
-      background: "#881337",
-      featureBox: "#fff1f2",
-      featureTitle: "#881337",
-      featureText: "#be123c",
-      subtitleText: "#fecdd3",
-      buttonGradient: "linear-gradient(135deg, #be123c 0%, #9f1239 100%)"
+      gradient: "linear-gradient(135deg, #8a7060 0%, #4a3a30 100%)",
+      background: "#1f1815",
+      featureBox: "#f5efe9",
+      featureTitle: "#4a3a30",
+      featureText: "#6b5648",
+      subtitleText: "#d6c5b3",
+      buttonGradient: "linear-gradient(135deg, #6b5648 0%, #4a3a30 100%)"
     },
     features: [
       "Inside-out design - specify number and width of columns",
@@ -155,13 +156,13 @@ const toolsData = [
     videoId: "XRzJhi8uWMY",
     videoTitle: "Display Shelf Designer",
     colorScheme: {
-      gradient: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
-      background: "#312e81",
-      featureBox: "#eef2ff",
-      featureTitle: "#312e81",
-      featureText: "#4338ca",
-      subtitleText: "#c7d2fe",
-      buttonGradient: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)"
+      gradient: "linear-gradient(135deg, #a16207 0%, #422006 100%)",
+      background: "#1c1917",
+      featureBox: "#fefce8",
+      featureTitle: "#422006",
+      featureText: "#713f12",
+      subtitleText: "#fde68a",
+      buttonGradient: "linear-gradient(135deg, #854d0e 0%, #422006 100%)"
     },
     features: [
       "Two modes: Open Riser or Enclosed Shelf",
@@ -171,5 +172,37 @@ const toolsData = [
     ],
     imageOverlay: "Design custom display shelves →",
     fallbackEmoji: "🗄️"
+  },
+  {
+    id: "scale-model-building",
+    name: "Scale Model Building Designer",
+    subtitle: "Wargaming terrain and model railroad buildings",
+    description: "Design laser-cut scale-model buildings at 28mm or 32mm wargaming scale, or HO model railroad scale. Configure each wall independently with doors and windows, add a lift-off gabled roof with attic windows, and include a wargaming-friendly balcony floor — all proportioned from real architectural dimensions.",
+    image: "img/scale-model-building.png",
+    imageAlt: "Laser-cut scale-model stone buildings with gable roofs and attic windows",
+    link: "scale-model-building-designer.html",
+    videoId: "yAXQilTn09A",
+    videoTitle: "Scale Model Building Designer",
+    colorScheme: {
+      gradient: "linear-gradient(135deg, #78716c 0%, #44403c 100%)",
+      background: "#1c1917",
+      featureBox: "#fafaf9",
+      featureTitle: "#1c1917",
+      featureText: "#44403c",
+      subtitleText: "#d6d3d1",
+      buttonGradient: "linear-gradient(135deg, #57534e 0%, #44403c 100%)"
+    },
+    features: [
+      "Three scales: 28mm/32mm wargaming and HO model railroad",
+      "Real-world feet input — real architectural proportions",
+      "Per-wall doors, windows, and Victorian gable attic windows",
+      "Lift-off gabled roof with overhang and ridge cap",
+      "Optional ground floor + 2-story balcony ring for wargaming"
+    ],
+    imageOverlay: "Build scale-model buildings →",
+    fallbackEmoji: "🏠"
   }
 ];
+
+// Reverse so the newest tools (appended at the bottom of the array above) display first.
+toolsData.reverse();
