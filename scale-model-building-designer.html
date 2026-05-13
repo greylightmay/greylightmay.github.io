@@ -1,0 +1,1624 @@
+<!--
+  Tool: Scale Model Building Designer
+  Version: v1.0.0
+  Last Updated: April 20, 2026
+  Author: GreyLightMay
+  Website: https://greylightmay.com
+
+  Based on 5-sided-box-designer-v2.html per DESIGNER-PATTERNS.md.
+  Preview transforms and path generation primitives copied verbatim.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scale Model Building Designer v1.0.0</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
+    <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect, useMemo } = React;
+
+        // ============================================================
+        // CONSTANTS
+        // ============================================================
+        const SCALES = {
+          '28mm': { ratio: 56, label: '28mm Heroic Wargaming (1:56)' },
+          '32mm': { ratio: 50, label: '32mm Wargaming (1:50)' },
+          'HO':   { ratio: 87, label: 'HO Model Railroad (1:87)' },
+        };
+
+        // Real-world architectural defaults (feet)
+        const STORY_HEIGHT_FT   = 12;        // floor-to-floor (Victorian-ish for scale presence)
+        const DOOR_WIDTH_FT     = 3;
+        const DOOR_HEIGHT_FT    = 80 / 12;   // 6'8"
+        const WINDOW_WIDTH_FT   = 3;
+        const WINDOW_HEIGHT_FT  = 4;
+        const SILL_HEIGHT_FT    = 3;         // floor to window sill
+        const MIN_GAP_FT        = 0.5;       // 6" gap between openings/corners
+        const TRIM_MARGIN_FT      = 0.25;    // 3" window trim margin around opening
+        const DOOR_TRIM_MARGIN_FT = 0.5;     // 6" door casing — wider for visual weight
+        const GABLE_WINDOW_FT   = 2;         // 2ft × 2ft Victorian attic window in gable peak
+        const ROOF_OVERHANG_FT  = 1;         // 12" overhang past walls on all roof edges
+        const WINDOW_TRIM_LIP   = 0.04;      // Cut inches — small lip (~1mm) for gluing pane behind trim
+
+        const ROOF_PITCHES = [
+          { value: 30, label: '30° (Shallow)' },
+          { value: 45, label: '45° (Classic)' },
+          { value: 60, label: '60° (Steep)' },
+        ];
+
+        const WALL_KEYS = ['front', 'back', 'left', 'right'];
+        const WALL_LABELS = { front: 'Front', back: 'Back', left: 'Left', right: 'Right' };
+
+        const BuildingDesigner = () => {
+          // ====================================================
+          // STATE
+          // ====================================================
+          // Scale & footprint (footprint is in REAL-WORLD FEET)
+          const [scale, setScale] = useState('28mm');
+          const [footprintWidthFt, setFootprintWidthFt] = useState(40);
+          const [footprintDepthFt, setFootprintDepthFt] = useState(20);
+          const [footprintWidthInput, setFootprintWidthInput] = useState('40');
+          const [footprintDepthInput, setFootprintDepthInput] = useState('20');
+          const [stories, setStories] = useState(1);
+
+          // Roof
+          const [roofPitch, setRoofPitch] = useState(45);
+          const [ridgeDirection, setRidgeDirection] = useState('width'); // 'width' or 'depth'
+
+          // Floor / balcony
+          const [includeFloor, setIncludeFloor] = useState(false);
+          const [secondFloorMode, setSecondFloorMode] = useState('none'); // 'none'|'balcony'
+          const [balconyWidth, setBalconyWidth] = useState(1.0);
+          const [balconyWidthInput, setBalconyWidthInput] = useState('1.0');
+
+          // Per-wall config: { [story]: { [wall]: { door, windows } } }
+          const [wallConfig, setWallConfig] = useState({
+            1: {
+              front: { door: 'center', windows: 2 },
+              back:  { door: 'none',   windows: 2 },
+              left:  { door: 'none',   windows: 1 },
+              right: { door: 'none',   windows: 1 },
+            },
+            2: {
+              front: { door: 'none',   windows: 2 },
+              back:  { door: 'none',   windows: 2 },
+              left:  { door: 'none',   windows: 1 },
+              right: { door: 'none',   windows: 1 },
+            },
+          });
+
+          // Door clearance (floating panel gap)
+          const [doorClearance, setDoorClearance] = useState(0.03);
+          const [doorClearanceInput, setDoorClearanceInput] = useState('0.03');
+
+          // Gable windows — one per wall (only applies to walls currently gable-ended)
+          const [gableWindows, setGableWindows] = useState({ front: false, back: false, left: false, right: false });
+
+          // Material & units
+          const [units, setUnits] = useState('inches');
+          const [materialThickness, setMaterialThickness] = useState(0.125);
+          const [materialPreset, setMaterialPreset] = useState('0.125');
+          const [customThickness, setCustomThickness] = useState('');
+
+          // Bed check
+          const [bedSize, setBedSize] = useState({ width: 12, height: 20 });
+          const [bedPreset, setBedPreset] = useState('12x20');
+          const [customBedWidth, setCustomBedWidth] = useState('');
+          const [customBedHeight, setCustomBedHeight] = useState('');
+
+          // Preview
+          const [zoomLevel, setZoomLevel] = useState(0.5);
+
+          // Filename
+          const [filename, setFilename] = useState('building');
+
+          // ====================================================
+          // UNIT CONVERSION
+          // ====================================================
+          const convertToInches = (value) => units === 'mm' ? value / 25.4 : value;
+          const convertFromInches = (value) => units === 'mm' ? value * 25.4 : value;
+          const formatUnit = (value) => units === 'mm' ? value.toFixed(1) : value.toFixed(3);
+
+          useEffect(() => {
+            setBalconyWidthInput(formatUnit(convertFromInches(balconyWidth)));
+            setDoorClearanceInput(formatUnit(convertFromInches(doorClearance)));
+          }, [units]);
+
+          useEffect(() => {
+            if (materialPreset === 'custom') return;
+            const presets = units === 'inches'
+              ? { '0.125': 0.125, '0.25': 0.25, '0.118': 0.118, '0.236': 0.236 }
+              : { '3.0': 3.0 / 25.4, '6.0': 6.0 / 25.4, '3.175': 3.175 / 25.4, '6.35': 6.35 / 25.4 };
+            setMaterialThickness(presets[materialPreset] || 0.125);
+          }, [materialPreset, units]);
+
+          // HO is a display-only scale — no miniatures going inside, so second-story floor
+          // and balcony ring aren't useful. Auto-reset to 'none' whenever scale becomes HO.
+          useEffect(() => {
+            if (scale === 'HO' && secondFloorMode !== 'none') setSecondFloorMode('none');
+          }, [scale]);
+
+          // When ridge direction changes, clear gable-window flags on walls that are no longer gable.
+          // Prevents stale "enabled but not a gable wall" warnings after a logical reconfigure.
+          useEffect(() => {
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            const isGable = wk => ridgeAlongWidth
+              ? (wk === 'left' || wk === 'right')
+              : (wk === 'front' || wk === 'back');
+            setGableWindows(prev => {
+              const next = { ...prev };
+              let changed = false;
+              for (const wk of WALL_KEYS) {
+                if (next[wk] && !isGable(wk)) { next[wk] = false; changed = true; }
+              }
+              return changed ? next : prev;
+            });
+          }, [ridgeDirection]);
+
+          // ====================================================
+          // SCALE MATH — convert real-world feet to cut inches
+          // ====================================================
+          const scaled = useMemo(() => {
+            const ratio = SCALES[scale].ratio;
+            const sf = (ft) => (ft * 12) / ratio; // feet -> cut inches
+            return {
+              ratio,
+              footprintWidth:  sf(footprintWidthFt),
+              footprintDepth:  sf(footprintDepthFt),
+              storyHeight:     sf(STORY_HEIGHT_FT),
+              doorWidth:       sf(DOOR_WIDTH_FT),
+              doorHeight:      sf(DOOR_HEIGHT_FT),
+              windowWidth:     sf(WINDOW_WIDTH_FT),
+              windowHeight:    sf(WINDOW_HEIGHT_FT),
+              sillHeight:      sf(SILL_HEIGHT_FT),
+              minGap:          sf(MIN_GAP_FT),
+              trimMargin:      sf(TRIM_MARGIN_FT),
+              doorTrimMargin:  sf(DOOR_TRIM_MARGIN_FT),
+              gableWindowSize: sf(GABLE_WINDOW_FT),
+              roofOverhang:    sf(ROOF_OVERHANG_FT),
+            };
+          }, [scale, footprintWidthFt, footprintDepthFt]);
+
+          // Total wall height (includes all stories, no gable triangle)
+          const wallBodyHeight = scaled.storyHeight * stories;
+
+          // Gable peak height above eave = (ridgeSpan/2) * tan(pitch)
+          const pitchRad = (roofPitch * Math.PI) / 180;
+          const ridgeSpanFt = ridgeDirection === 'width' ? footprintDepthFt : footprintWidthFt;
+          const gablePeakCut = (SCALES[scale].ratio ? ((ridgeSpanFt * 12) / SCALES[scale].ratio) : 0) / 2 * Math.tan(pitchRad);
+
+          // ====================================================
+          // PATH PRIMITIVES (copied from 5-sided-box-designer-v2)
+          // ====================================================
+          const calculateTabCount = (edgeLength) => Math.max(1, Math.ceil(edgeLength / 2));
+
+          const generateTabPositions = (edgeLength, numTabs, tabWidth) => {
+            if (!tabWidth) tabWidth = 0.5;
+            const spacing = edgeLength / numTabs;
+            const positions = [];
+            for (let i = 0; i < numTabs; i++) {
+              const center = (i + 0.5) * spacing;
+              positions.push({ start: center - tabWidth / 2, end: center + tabWidth / 2 });
+            }
+            return positions;
+          };
+
+          // ====================================================
+          // OPENING LAYOUT
+          // Windows sit at fixed fractional positions (0.25, 0.5, 0.75) so they align
+          // across opposing walls regardless of door placement.
+          // Doors sit at 0.25 / 0.5 / 0.75 for left/center/right.
+          // Door base is raised by materialThickness so the wall's bottom strip remains
+          // intact (needed for bottom tabs to stay attached).
+          // ====================================================
+          const computeWallLayout = (wallLength, story, config) => {
+            const { doorWidth, doorHeight, windowWidth, windowHeight, sillHeight, storyHeight, minGap } = scaled;
+            const storyOffset = (story - 1) * storyHeight;
+            const doorBaseY = storyOffset + materialThickness; // raised so tab strip remains
+            const sillY = storyOffset + sillHeight;
+
+            const windowAt = (frac) => ({
+              type: 'window', width: windowWidth, height: windowHeight,
+              leftX: frac * wallLength - windowWidth / 2,
+              bottomY: sillY
+            });
+            const doorAt = (frac) => ({
+              type: 'door', width: doorWidth, height: doorHeight,
+              leftX: frac * wallLength - doorWidth / 2,
+              bottomY: doorBaseY
+            });
+
+            const d = config.door;
+            const w = config.windows;
+            const hasDoor = d !== 'none';
+            const doorFrac = d === 'left' ? 0.25 : d === 'right' ? 0.75 : 0.5;
+
+            const openings = [];
+            if (!hasDoor) {
+              if (w >= 1) openings.push(windowAt(w === 1 ? 0.5 : 0.25));
+              if (w >= 2) openings.push(windowAt(w === 2 ? 0.75 : 0.5));
+              if (w >= 3) openings.push(windowAt(0.75));
+            } else {
+              openings.push(doorAt(doorFrac));
+              // Window slots other than the one occupied by door
+              if (w === 1) {
+                // Put window on opposite side of door; for center door, default to 0.25
+                const wFrac = d === 'left' ? 0.75 : d === 'right' ? 0.25 : 0.25;
+                openings.push(windowAt(wFrac));
+              } else if (w === 2) {
+                // Keep 2 windows at fixed 0.25 and 0.75; if door occupies one of these, shift
+                if (doorFrac === 0.5) {
+                  openings.push(windowAt(0.25));
+                  openings.push(windowAt(0.75));
+                } else if (doorFrac === 0.25) {
+                  openings.push(windowAt(0.5));
+                  openings.push(windowAt(0.75));
+                } else {
+                  openings.push(windowAt(0.25));
+                  openings.push(windowAt(0.5));
+                }
+              } else if (w === 3) {
+                // 3 windows + door not supported — add windows at non-door slots
+                [0.25, 0.5, 0.75].filter(f => f !== doorFrac).forEach(f => openings.push(windowAt(f)));
+              }
+            }
+
+            // Validation: required horizontal span (sum widths + minGap padding between)
+            const sorted = [...openings].sort((a, b) => a.leftX - b.leftX);
+            let overflow = false;
+            if (sorted.length > 0) {
+              if (sorted[0].leftX < minGap - 0.001) overflow = true;
+              for (let i = 1; i < sorted.length; i++) {
+                const prevEnd = sorted[i-1].leftX + sorted[i-1].width;
+                if (sorted[i].leftX < prevEnd + minGap - 0.001) overflow = true;
+              }
+              const last = sorted[sorted.length - 1];
+              if (last.leftX + last.width > wallLength - minGap + 0.001) overflow = true;
+            }
+            const requiredLength = wallLength; // best-effort; used in the warning message
+
+            return { openings, overflow, requiredLength };
+          };
+
+          // ====================================================
+          // WALL PANEL PATH GENERATION
+          // ====================================================
+          // Generates a wall panel path (clockwise from top-left) with:
+          //  - tabs/notches on sides (cornerMode)
+          //  - tab on bottom (bottom: 'tabs'|'notches'|'none')
+          //  - top edge: flat ('flat'), angled-for-eave ('eaveAngle'), or gable triangle ('gable')
+          //  - rectangular cutouts for openings
+          //  - optional horizontal slot line across interior (balcony slots) at slotY
+          //
+          // Coordinates: x=0..wallLength, y=0 at TOP, y=panelHeight at BOTTOM
+          // For simplicity, we'll build the outline in one go, then add opening cutouts as separate sub-paths.
+          const generateWallPanelPath = (params) => {
+            const {
+              wallLength,          // body length (interior corner-to-corner for gable walls, similar for eave)
+              panelHeight,         // body height (wall height, NOT including gable peak if gable)
+              leftEdge,            // 'tabs' | 'notches' | 'plain'
+              rightEdge,           // 'tabs' | 'notches' | 'plain'
+              bottomEdge,          // 'tabs' | 'notches' | 'plain'
+              topEdge,             // { type: 'flat' } | { type: 'gable', peakHeight } | { type: 'eaveAngle', pitch }
+              openings = [],       // [{leftX, bottomY, width, height}]  bottomY measured from panel bottom upward
+            } = params;
+
+            const tabWidth = 0.5;
+            const tabDepth = materialThickness;
+
+            // --- Build outline ---
+            let outline = '';
+
+            // Top edge: varies by type
+            if (topEdge.type === 'flat') {
+              outline = `M 0 0 L ${wallLength} 0`;
+            } else if (topEdge.type === 'gable') {
+              // Gable wall: top comes to a peak at the horizontal center, rising peakHeight above panel top
+              const peak = topEdge.peakHeight;
+              outline = `M 0 0 L ${wallLength / 2} ${-peak} L ${wallLength} 0`;
+            } else if (topEdge.type === 'eaveAngle') {
+              // Eave wall with angled top: for lift-off roof fit, the top edge stays flat
+              // (the ROOF is what's angled; wall top is the eave line). Keep flat for v1.
+              outline = `M 0 0 L ${wallLength} 0`;
+            } else {
+              outline = `M 0 0 L ${wallLength} 0`;
+            }
+
+            // Right edge
+            const sideTabCount = calculateTabCount(panelHeight);
+            const sideTabs = generateTabPositions(panelHeight, sideTabCount, tabWidth);
+
+            if (rightEdge === 'tabs') {
+              sideTabs.forEach(t => {
+                outline += ` L ${wallLength} ${t.start} L ${wallLength + tabDepth} ${t.start} L ${wallLength + tabDepth} ${t.end} L ${wallLength} ${t.end}`;
+              });
+            } else if (rightEdge === 'notches') {
+              sideTabs.forEach(t => {
+                outline += ` L ${wallLength} ${t.start} L ${wallLength - tabDepth} ${t.start} L ${wallLength - tabDepth} ${t.end} L ${wallLength} ${t.end}`;
+              });
+            }
+            outline += ` L ${wallLength} ${panelHeight}`;
+
+            // Bottom edge
+            // If bottomDistributeAcross is provided, distribute tab positions across that width
+            // and offset into the body's local frame. Used so tabs on interior-width bodies
+            // (width walls) align with floor notches spaced across exterior width.
+            const bottomDistr = params.bottomDistributeAcross || wallLength;
+            const bottomXOffset = (bottomDistr - wallLength) / 2;
+            const bottomTabCount = calculateTabCount(bottomDistr);
+            const bottomTabsRaw = generateTabPositions(bottomDistr, bottomTabCount, tabWidth);
+            const bottomTabs = bottomTabsRaw.map(t => ({ start: t.start - bottomXOffset, end: t.end - bottomXOffset }));
+
+            if (bottomEdge === 'tabs') {
+              for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                const t = bottomTabs[i];
+                outline += ` L ${t.end} ${panelHeight} L ${t.end} ${panelHeight + tabDepth} L ${t.start} ${panelHeight + tabDepth} L ${t.start} ${panelHeight}`;
+              }
+            } else if (bottomEdge === 'notches') {
+              for (let i = bottomTabs.length - 1; i >= 0; i--) {
+                const t = bottomTabs[i];
+                outline += ` L ${t.end} ${panelHeight} L ${t.end} ${panelHeight - tabDepth} L ${t.start} ${panelHeight - tabDepth} L ${t.start} ${panelHeight}`;
+              }
+            }
+            outline += ` L 0 ${panelHeight}`;
+
+            // Left edge (going up)
+            if (leftEdge === 'tabs') {
+              for (let i = sideTabs.length - 1; i >= 0; i--) {
+                const t = sideTabs[i];
+                outline += ` L 0 ${t.end} L ${-tabDepth} ${t.end} L ${-tabDepth} ${t.start} L 0 ${t.start}`;
+              }
+            } else if (leftEdge === 'notches') {
+              for (let i = sideTabs.length - 1; i >= 0; i--) {
+                const t = sideTabs[i];
+                outline += ` L 0 ${t.end} L ${tabDepth} ${t.end} L ${tabDepth} ${t.start} L 0 ${t.start}`;
+              }
+            }
+            outline += ` L 0 0 Z`;
+
+            // --- Add openings as separate sub-paths (same path d, treated as holes via even-odd or separate paths) ---
+            // For simplicity, return outline + opening rectangles as separate <path> strings.
+            // Caller will place them inside the same <g>.
+            const openingPaths = openings.map(op => {
+              // bottomY is measured from panel bottom upward; convert to SVG coords (y=0 at top)
+              const top = panelHeight - op.bottomY - op.height;
+              const left = op.leftX;
+              return `M ${left} ${top} L ${left + op.width} ${top} L ${left + op.width} ${top + op.height} L ${left} ${top + op.height} Z`;
+            });
+
+            return { outline, openingPaths };
+          };
+
+          // Roof slope panel (simple rectangle for v1)
+          const generateRoofSlopePath = (length, slopeWidth) => {
+            return `M 0 0 L ${length} 0 L ${length} ${slopeWidth} L 0 ${slopeWidth} Z`;
+          };
+
+          // Floor panel with notches on all edges to receive wall tabs
+          const generateFloorPath = (width, depth, widthTabs, depthTabs) => {
+            const tabWidth = 0.5;
+            const tabDepth = materialThickness;
+
+            const topNotches = generateTabPositions(width, widthTabs, tabWidth);
+            const rightNotches = generateTabPositions(depth, depthTabs, tabWidth);
+            const bottomNotches = generateTabPositions(width, widthTabs, tabWidth);
+            const leftNotches = generateTabPositions(depth, depthTabs, tabWidth);
+
+            let path = `M 0 0`;
+            topNotches.forEach(n => {
+              path += ` L ${n.start} 0 L ${n.start} ${tabDepth} L ${n.end} ${tabDepth} L ${n.end} 0`;
+            });
+            path += ` L ${width} 0`;
+            rightNotches.forEach(n => {
+              path += ` L ${width} ${n.start} L ${width - tabDepth} ${n.start} L ${width - tabDepth} ${n.end} L ${width} ${n.end}`;
+            });
+            path += ` L ${width} ${depth}`;
+            for (let i = bottomNotches.length - 1; i >= 0; i--) {
+              const n = bottomNotches[i];
+              path += ` L ${n.end} ${depth} L ${n.end} ${depth - tabDepth} L ${n.start} ${depth - tabDepth} L ${n.start} ${depth}`;
+            }
+            path += ` L 0 ${depth}`;
+            for (let i = leftNotches.length - 1; i >= 0; i--) {
+              const n = leftNotches[i];
+              path += ` L 0 ${n.end} L ${tabDepth} ${n.end} L ${tabDepth} ${n.start} L 0 ${n.start}`;
+            }
+            path += ` L 0 0 Z`;
+            return path;
+          };
+
+          // Balcony ring: outer rectangle with tabs, inner rectangle hole
+          const generateBalconyRingPaths = (outerW, outerD, innerW, innerD, widthTabs, depthTabs) => {
+            const tabWidth = 0.5;
+            const tabDepth = materialThickness;
+
+            // Outer outline has tabs on all sides
+            const topTabs = generateTabPositions(outerW, widthTabs, tabWidth);
+            const rightTabs = generateTabPositions(outerD, depthTabs, tabWidth);
+
+            let outer = `M 0 0`;
+            topTabs.forEach(t => {
+              outer += ` L ${t.start} 0 L ${t.start} ${-tabDepth} L ${t.end} ${-tabDepth} L ${t.end} 0`;
+            });
+            outer += ` L ${outerW} 0`;
+            rightTabs.forEach(t => {
+              outer += ` L ${outerW} ${t.start} L ${outerW + tabDepth} ${t.start} L ${outerW + tabDepth} ${t.end} L ${outerW} ${t.end}`;
+            });
+            outer += ` L ${outerW} ${outerD}`;
+            for (let i = topTabs.length - 1; i >= 0; i--) {
+              const t = topTabs[i];
+              outer += ` L ${t.end} ${outerD} L ${t.end} ${outerD + tabDepth} L ${t.start} ${outerD + tabDepth} L ${t.start} ${outerD}`;
+            }
+            outer += ` L 0 ${outerD}`;
+            for (let i = rightTabs.length - 1; i >= 0; i--) {
+              const t = rightTabs[i];
+              outer += ` L 0 ${t.end} L ${-tabDepth} ${t.end} L ${-tabDepth} ${t.start} L 0 ${t.start}`;
+            }
+            outer += ` L 0 0 Z`;
+
+            // Inner hole
+            const innerLeft = (outerW - innerW) / 2;
+            const innerTop  = (outerD - innerD) / 2;
+            const inner = `M ${innerLeft} ${innerTop} L ${innerLeft + innerW} ${innerTop} L ${innerLeft + innerW} ${innerTop + innerD} L ${innerLeft} ${innerTop + innerD} Z`;
+
+            return { outer, inner };
+          };
+
+          // Window insert — back pane with 4 separate rectangular holes (mullions are the solid
+          // material between them). Cuts must not cross, or the piece falls apart.
+          //  - Outer rectangle = piece outline
+          //  - 4 inner rectangles = glass pane cutouts, with a cross of solid material ("mullion")
+          //    between them. Mullion thickness = min(w,h) * 0.08 (frame + cross).
+          const generateWindowBackPanePath = (w, h) => {
+            const paths = [];
+            paths.push(`M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`);
+            const m = Math.min(w, h) * 0.08; // thickness of frame edges and middle cross
+            const qw = (w - 3 * m) / 2;      // each glass pane width
+            const qh = (h - 3 * m) / 2;      // each glass pane height
+            if (qw > 0.02 && qh > 0.02) {
+              const positions = [
+                [m, m],                       // TL
+                [m + qw + m, m],              // TR
+                [m, m + qh + m],              // BL
+                [m + qw + m, m + qh + m],     // BR
+              ];
+              positions.forEach(([x, y]) => {
+                paths.push(`M ${x} ${y} L ${x + qw} ${y} L ${x + qw} ${y + qh} L ${x} ${y + qh} Z`);
+              });
+            }
+            return paths;
+          };
+
+          // Window insert — front trim.
+          // Outer = opening + 2*margin (wider than wall opening, visible as trim face on exterior).
+          // Inner = opening - 2*lipSize (SMALLER than wall opening, so the trim has a visible
+          // inner lip that overlaps the back pane. The back pane (opening-sized) slides through
+          // the wall opening from behind and glues to the back of this lip.)
+          const generateWindowTrimPath = (openW, openH, margin) => {
+            // Small fixed lip (~1 mm cut) — just enough glue area for the pane to adhere to
+            // the back of the trim without swallowing the opening at small scales like HO.
+            const lip = WINDOW_TRIM_LIP;
+            const totalW = openW + 2 * margin;
+            const totalH = openH + 2 * margin;
+            const innerW = Math.max(openW * 0.6, openW - 2 * lip);
+            const innerH = Math.max(openH * 0.6, openH - 2 * lip);
+            const innerX = (totalW - innerW) / 2;
+            const innerY = (totalH - innerH) / 2;
+            const outer = `M 0 0 L ${totalW} 0 L ${totalW} ${totalH} L 0 ${totalH} Z`;
+            const inner = `M ${innerX} ${innerY} L ${innerX + innerW} ${innerY} L ${innerX + innerW} ${innerY + innerH} L ${innerX} ${innerY + innerH} Z`;
+            return { outer, inner, totalW, totalH };
+          };
+
+          // Door insert — floating panel (opening minus clearance, with simple 2-panel detail)
+          const generateDoorPanelPath = (openW, openH, clearance) => {
+            const w = openW - 2 * clearance;
+            const h = openH - 2 * clearance;
+            const paths = [];
+            paths.push(`M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`);
+            // Two inset panels
+            const inset = Math.min(w, h) * 0.12;
+            const panelH = (h - 3 * inset) / 2;
+            paths.push(`M ${inset} ${inset} L ${w - inset} ${inset} L ${w - inset} ${inset + panelH} L ${inset} ${inset + panelH} Z`);
+            paths.push(`M ${inset} ${h - inset - panelH} L ${w - inset} ${h - inset - panelH} L ${w - inset} ${h - inset} L ${inset} ${h - inset} Z`);
+            return { paths, w, h };
+          };
+
+          // Door insert — front trim.
+          // Outer = opening + 2*margin (visible casing on exterior wall face).
+          // Inner = opening (matches wall opening — NO lip). The door panel hinges onto
+          // the trim's inner edge, so the trim must clear the full opening for the door to swing.
+          // Unlike windows, there's nothing to glue a pane behind here.
+          const generateDoorTrimPath = (openW, openH, margin, clearance) => {
+            const totalW = openW + 2 * margin;
+            const totalH = openH + 2 * margin;
+            const outer = `M 0 0 L ${totalW} 0 L ${totalW} ${totalH} L 0 ${totalH} Z`;
+            const inner = `M ${margin} ${margin} L ${margin + openW} ${margin} L ${margin + openW} ${margin + openH} L ${margin} ${margin + openH} Z`;
+            return { outer, inner, totalW, totalH };
+          };
+
+          // Balcony slot positions on a wall (2-story, balcony mode only).
+          // Slots live in the 1ST-story panel near its top — this places the balcony ring
+          // visually between the downstairs and upstairs windows with roughly equal gaps,
+          // and keeps the slot entirely inside one panel for a clean cut.
+          // bottomY is measured from the 1st-story panel bottom upward (panel-local).
+          const computeBalconySlots = (wallKey, wallLengthExterior) => {
+            if (stories !== 2 || secondFloorMode !== 'balcony') return [];
+            const slotHeight = materialThickness;
+            // 2 * materialThickness below the 1st-story panel top edge
+            const slotBottomY = scaled.storyHeight - 2 * materialThickness;
+            const tabCount = calculateTabCount(wallLengthExterior);
+            const tabPositions = generateTabPositions(wallLengthExterior, tabCount, 0.5);
+            return tabPositions.map(tp => ({
+              type: 'slot',
+              leftX: tp.start,
+              bottomY: slotBottomY,
+              width: tp.end - tp.start,
+              height: slotHeight,
+            }));
+          };
+
+          // Gable window — 2'×2' real-world, centered in the gable triangle.
+          // Returns { fits, opening, reason } where opening is in panel-local coords or null.
+          // bottomY measured from panel bottom (panel-local), so values > panelHeight fall into peak.
+          const computeGableWindow = (wallKey, wallLengthExterior, wallLengthBody, panelHeight) => {
+            if (!gableWindows[wallKey]) return { fits: false, opening: null };
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            const isGable = ridgeAlongWidth
+              ? (wallKey === 'left' || wallKey === 'right')
+              : (wallKey === 'front' || wallKey === 'back');
+            if (!isGable) return { fits: false, opening: null, reason: 'not a gable wall' };
+            const w = scaled.gableWindowSize;
+            const h = scaled.gableWindowSize;
+            // Peak apex above panelHeight by gablePeakCut. Window vertically centered in peak area.
+            const windowBottomAbovePanelTop = (gablePeakCut - h) / 2;
+            if (windowBottomAbovePanelTop < 0) {
+              return { fits: false, opening: null, reason: 'pitch too shallow — peak is too short for the window' };
+            }
+            // Triangle horizontal extent at window top: wallLengthBody * (1 - topAbovePanelTop / gablePeakCut)
+            // For symmetric fit, check top (the narrower point).
+            const topAbovePanelTop = windowBottomAbovePanelTop + h;
+            const triangleWidthAtTop = wallLengthBody * (1 - topAbovePanelTop / gablePeakCut);
+            if (w > triangleWidthAtTop - 2 * scaled.minGap / 4) {
+              return { fits: false, opening: null, reason: 'gable too narrow at window height' };
+            }
+            // Place in exterior coords (will be shifted to body coords by the caller for tabbed walls)
+            const centerX = wallLengthExterior / 2;
+            return {
+              fits: true,
+              opening: {
+                type: 'gable-window',
+                leftX: centerX - w / 2,
+                bottomY: panelHeight + windowBottomAbovePanelTop,
+                width: w,
+                height: h,
+              },
+              reason: null,
+            };
+          };
+
+          // ====================================================
+          // WALL LAYOUT (all 4 walls, per story) — used for both SVG and preview
+          // ====================================================
+          const buildAllWallLayouts = () => {
+            const result = {};
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            for (const wallKey of WALL_KEYS) {
+              const isWidthWall = wallKey === 'front' || wallKey === 'back';
+              const wallLengthCut = isWidthWall ? scaled.footprintWidth : scaled.footprintDepth;
+              // A wall is GABLED when its length is perpendicular to the ridge
+              // ridge 'width' => ridge runs along width => gable walls are LEFT/RIGHT (depth-oriented)
+              // Wait — if ridge runs along width, the gable triangles are on the walls whose length = width
+              // Actually: the gable END walls are the ones perpendicular to the ridge.
+              // Ridge along width => gables on LEFT and RIGHT walls (whose length = depth, facing width-direction)
+              // Let me re-derive: ridge runs along footprint.width (long dimension of roof) =>
+              // roof peak runs parallel to width => gable triangles are on walls where the wall length = depth
+              // Hmm, this depends on convention. Let's define:
+              // ridgeAlongWidth=true means ridge runs in the +X (width) direction.
+              // Then the gable ends are on the FRONT and BACK walls (which span the width).
+              // Wait no — front and back span width, so if ridge runs along width, front/back walls
+              // are UNDER the eave (not gabled). The gabled walls are left/right.
+              //
+              // Let me think geometrically:
+              // Footprint: width along X, depth along Y
+              // Roof with ridge along width: ridge is a line parallel to X at the top, running over the center
+              // The two roof slopes go from the ridge down to the eaves on the +Y and -Y sides
+              // So the eave walls are front (+Y) and back (-Y), which are the walls spanning X (width)
+              // The gable triangles are on the left (-X) and right (+X) walls, which span Y (depth)
+              //
+              // Correction: if ridge runs along width (X), then
+              //   - front/back walls = EAVE walls (width-spanning)
+              //   - left/right walls = GABLE walls (depth-spanning)
+              const isGable = ridgeAlongWidth
+                ? (wallKey === 'left' || wallKey === 'right')
+                : (wallKey === 'front' || wallKey === 'back');
+
+              const perStory = [];
+              for (let s = 1; s <= stories; s++) {
+                const cfg = wallConfig[s][wallKey];
+                const layout = computeWallLayout(wallLengthCut, s, cfg);
+                perStory.push({ story: s, wallLength: wallLengthCut, layout, config: cfg });
+              }
+              result[wallKey] = { wallLength: wallLengthCut, isGable, perStory };
+            }
+            return result;
+          };
+
+          const validation = useMemo(() => {
+            const warnings = [];
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            for (const wallKey of WALL_KEYS) {
+              const isWidthWall = wallKey === 'front' || wallKey === 'back';
+              const wallLengthCut = isWidthWall ? scaled.footprintWidth : scaled.footprintDepth;
+              for (let s = 1; s <= stories; s++) {
+                const cfg = wallConfig[s][wallKey];
+                const { overflow, requiredLength } = computeWallLayout(wallLengthCut, s, cfg);
+                if (overflow) {
+                  const reqFt = requiredLength * (SCALES[scale].ratio / 12);
+                  const haveFt = wallLengthCut * (SCALES[scale].ratio / 12);
+                  warnings.push(`${WALL_LABELS[wallKey]} wall (story ${s}): ${cfg.door !== 'none' ? 'door + ' : ''}${cfg.windows} window${cfg.windows === 1 ? '' : 's'} needs ${reqFt.toFixed(1)} ft, wall is ${haveFt.toFixed(1)} ft wide.`);
+                }
+              }
+              // Gable window fit check (top story only)
+              if (gableWindows[wallKey]) {
+                const isGable = ridgeAlongWidth ? (wallKey === 'left' || wallKey === 'right') : (wallKey === 'front' || wallKey === 'back');
+                if (!isGable) {
+                  warnings.push(`${WALL_LABELS[wallKey]} wall: gable window is enabled but this isn't a gable wall (ridge direction is Along ${ridgeAlongWidth ? 'Width' : 'Depth'}).`);
+                } else {
+                  const bodyLen = isWidthWall ? wallLengthCut - 2 * materialThickness : wallLengthCut;
+                  const gw = computeGableWindow(wallKey, wallLengthCut, bodyLen, scaled.storyHeight);
+                  if (!gw.fits) {
+                    warnings.push(`${WALL_LABELS[wallKey]} wall: gable window won't fit — ${gw.reason || 'peak too small for a 2-ft window'}.`);
+                  }
+                }
+              }
+            }
+            return warnings;
+          }, [scale, footprintWidthFt, footprintDepthFt, stories, wallConfig, scaled, gableWindows, ridgeDirection, roofPitch, gablePeakCut, materialThickness]);
+
+          // ====================================================
+          // SVG GENERATION (laser bed layout)
+          // ====================================================
+          const generateSVG = useCallback(() => {
+            const spacing = 0.25;
+            const tabDepth = materialThickness;
+            const wallLayouts = buildAllWallLayouts();
+            const ratioFt = SCALES[scale].ratio / 12;
+
+            // Each story has 4 wall panels; they lay out in a row.
+            // Row 1-N: wall panels per story (stories side by side to keep vertical compact)
+            // Row for roof + floor/balcony
+            // Row for inserts
+
+            // Compute per-wall panel dims
+            // Panel length = wallLength (unchanged)
+            // Panel height = storyHeight (for 1-story eave walls: panelHeight = storyHeight; gable walls include peak on top)
+            // For 2-story: each story gets its own panel; peak only on TOP story's gable wall.
+
+            const allPanels = []; // {name, pathOutline, openingPaths, bboxW, bboxH}
+
+            // Ground-floor presence drives whether walls have bottom tabs.
+            // The balcony ring mates via interior slots, not bottom tabs, so it's independent.
+            const hasAnyFloor = includeFloor;
+
+            // Each wall is ONE panel spanning all stories (full height, with gable peak on top
+            // if applicable). Matches the preview output.
+            const totalWallH = scaled.storyHeight * stories;
+            for (const wallKey of WALL_KEYS) {
+              const { wallLength, isGable, perStory } = wallLayouts[wallKey];
+              const panelHeight = totalWallH;
+              const topEdge = isGable
+                ? { type: 'gable', peakHeight: gablePeakCut }
+                : { type: 'flat' };
+
+              // Corner convention driven by gable-ness, not by width/depth:
+              //   Gable walls: NOTCHES inward, body = full exterior — so the triangular
+              //     peak's base runs corner-to-corner and the roof slope sits flush.
+              //   Eave walls:  TABS outward, body = interior — tabs slot into the gable walls.
+              // This means flipping ridge direction also flips which walls are tabbed vs notched.
+              const isWidthWall = wallKey === 'front' || wallKey === 'back';
+              const leftEdge  = isGable ? 'notches' : 'tabs';
+              const rightEdge = isGable ? 'notches' : 'tabs';
+              const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
+
+              const bottomEdge = hasAnyFloor ? 'tabs' : 'plain';
+              const openingShift = isGable ? 0 : materialThickness;
+
+              // Collect all openings across all stories (bottomY already in full-wall frame
+              // since computeWallLayout uses storyOffset).
+              const userOpenings = [];
+              for (const s of perStory) {
+                for (const op of s.layout.openings) {
+                  userOpenings.push({
+                    leftX: op.leftX - openingShift,
+                    bottomY: op.bottomY,
+                    width: op.width,
+                    height: op.height,
+                  });
+                }
+              }
+
+              // Balcony slots (2-story balcony mode): in the 1st-story portion near its top.
+              // computeBalconySlots returns bottomY in 1st-story-panel-local frame, which for
+              // a full-wall panel is the same as full-wall frame (1st-story bottom = y=0).
+              const balconySlots = (stories === 2 && secondFloorMode === 'balcony')
+                ? computeBalconySlots(wallKey, wallLength).map(sl => ({
+                    leftX: sl.leftX - openingShift,
+                    bottomY: sl.bottomY,
+                    width: sl.width,
+                    height: sl.height,
+                  }))
+                : [];
+
+              // Gable window (only on gable walls, in the peak area above the top story).
+              // computeGableWindow(panelHeight=storyHeight) returns bottomY = storyHeight + offset.
+              // For a full-wall panel we shift by (stories-1)*storyHeight so it lands in the TOP story.
+              const gw = isGable ? computeGableWindow(wallKey, wallLength, bodyLength, scaled.storyHeight) : { fits: false, opening: null };
+              const gableWindowOpenings = gw.fits
+                ? [{
+                    leftX: gw.opening.leftX - openingShift,
+                    bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
+                    width: gw.opening.width,
+                    height: gw.opening.height,
+                  }]
+                : [];
+
+              const openings = [...userOpenings, ...balconySlots, ...gableWindowOpenings];
+
+              const { outline, openingPaths } = generateWallPanelPath({
+                wallLength: bodyLength,
+                panelHeight,
+                leftEdge, rightEdge, bottomEdge,
+                topEdge,
+                openings,
+                // Always distribute bottom tabs across exterior so they match floor notches
+                bottomDistributeAcross: wallLength,
+              });
+
+              const bboxExtraLeft  = (leftEdge  === 'tabs') ? materialThickness : 0;
+              const bboxExtraRight = (rightEdge === 'tabs') ? materialThickness : 0;
+              const bboxWidth = bodyLength + bboxExtraLeft + bboxExtraRight;
+              const bboxExtraTop    = (topEdge.type === 'gable') ? gablePeakCut : 0;
+              const bboxExtraBottom = (bottomEdge === 'tabs') ? materialThickness : 0;
+              const bboxHeight = panelHeight + bboxExtraTop + bboxExtraBottom;
+
+              allPanels.push({
+                name: `${wallKey}-wall`,
+                label: WALL_LABELS[wallKey],
+                outline, openingPaths,
+                bboxW: bboxWidth, bboxH: bboxHeight,
+                offsetX: bboxExtraLeft, offsetY: bboxExtraTop,
+              });
+            }
+
+            // Roof slopes — two rectangles, with overhang on all three exposed edges
+            // (both gable ends along the ridge + the eave side of each slope). The ridge
+            // edge where the two slopes meet gets no overhang.
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            const footprintRidgeDim = ridgeAlongWidth ? scaled.footprintWidth : scaled.footprintDepth;
+            const ridgeRunFt = ridgeAlongWidth ? footprintDepthFt : footprintWidthFt;
+            const ridgeRunCut = (ridgeRunFt * 12) / SCALES[scale].ratio;
+            const eaveToRidgeHypotenuse = (ridgeRunCut / 2) / Math.cos(pitchRad);
+            const overhang = scaled.roofOverhang;
+            const ridgeLength = footprintRidgeDim + 2 * overhang;      // extend past both gable ends
+            const slopeWidth  = eaveToRidgeHypotenuse + overhang;       // extend past eave (one side only)
+            const roofSlopePath = generateRoofSlopePath(ridgeLength, slopeWidth);
+
+            // Ground floor (any story count) + optional 2-story balcony ring.
+            // Ground floor = exterior footprint with inward notches (5-sided-box bottom convention).
+            const extW = scaled.footprintWidth;
+            const extD = scaled.footprintDepth;
+            let floorPath = null;
+            if (includeFloor) {
+              floorPath = generateFloorPath(extW, extD, calculateTabCount(extW), calculateTabCount(extD));
+            }
+            let balconyPaths = null;
+            if (stories === 2 && secondFloorMode === 'balcony') {
+              const bw = balconyWidth;
+              const innerW = Math.max(0.25, extW - 2 * bw);
+              const innerD = Math.max(0.25, extD - 2 * bw);
+              balconyPaths = generateBalconyRingPaths(extW, extD, innerW, innerD, calculateTabCount(extW), calculateTabCount(extD));
+            }
+
+            // Collect inserts (one per unique opening across all walls)
+            const windowInserts = [];
+            const doorInserts = [];
+            for (const wallKey of WALL_KEYS) {
+              const { wallLength, perStory } = wallLayouts[wallKey];
+              // Top-story bodyLength (needed for gable window fit check)
+              const isWidthWall = wallKey === 'front' || wallKey === 'back';
+              const bodyLenTop = isWidthWall ? wallLength - 2 * materialThickness : wallLength;
+              const gwCheck = computeGableWindow(wallKey, wallLength, bodyLenTop, scaled.storyHeight);
+              if (gwCheck.fits) {
+                windowInserts.push({ w: gwCheck.opening.width, h: gwCheck.opening.height });
+              }
+              for (const s of perStory) {
+                for (const op of s.layout.openings) {
+                  if (op.type === 'window') {
+                    windowInserts.push({ w: op.width, h: op.height });
+                  } else if (op.type === 'door') {
+                    doorInserts.push({ w: op.width, h: op.height });
+                  }
+                }
+              }
+            }
+
+            // ===== LAYOUT =====
+            // Rows:
+            //   1: all wall panels
+            //   2: roof slopes (x2) + floor + secondFloor/balcony
+            //   3: window inserts (pane + trim per window)
+            //   4: door inserts (trim + panel per door)
+
+            let currentY = 0;
+            let rowMaxH = 0;
+
+            // Row 1: walls
+            let wallsRow = [];
+            let x = 0;
+            for (const p of allPanels) {
+              wallsRow.push({ ...p, x, y: currentY });
+              x += p.bboxW + spacing;
+              rowMaxH = Math.max(rowMaxH, p.bboxH);
+            }
+            const row1Width = x - spacing;
+            currentY += rowMaxH + spacing;
+
+            // Row 2: roof + floor
+            let row2 = [];
+            x = 0;
+            rowMaxH = 0;
+            // Roof slope 1
+            row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 1' });
+            x += ridgeLength + spacing;
+            rowMaxH = Math.max(rowMaxH, slopeWidth);
+            // Roof slope 2
+            row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 2' });
+            x += ridgeLength + spacing;
+            // Ridge cap — thin rectangle sized ridgeLength × materialThickness.
+            // Glued between the two roof slopes at the apex to fill the angular gap and
+            // give the peak a crisp line.
+            const ridgeCapPath = `M 0 0 L ${ridgeLength} 0 L ${ridgeLength} ${materialThickness} L 0 ${materialThickness} Z`;
+            row2.push({ type: 'ridge-cap', path: ridgeCapPath, w: ridgeLength, h: materialThickness, x, y: currentY, label: 'Ridge' });
+            x += ridgeLength + spacing;
+            rowMaxH = Math.max(rowMaxH, materialThickness);
+            if (floorPath) {
+              row2.push({ type: 'floor', path: floorPath, w: extW, h: extD, x, y: currentY, label: 'Floor' });
+              x += extW + spacing;
+              rowMaxH = Math.max(rowMaxH, extD);
+            }
+            if (balconyPaths) {
+              row2.push({ type: 'balcony', paths: balconyPaths, w: extW, h: extD, x, y: currentY, label: 'Balcony' });
+              x += extW + spacing;
+              rowMaxH = Math.max(rowMaxH, extD);
+            }
+            const row2Width = x - spacing;
+            currentY += rowMaxH + spacing;
+
+            // Row 3: window inserts
+            let row3 = [];
+            x = 0;
+            rowMaxH = 0;
+            for (let i = 0; i < windowInserts.length; i++) {
+              const ins = windowInserts[i];
+              const paneW = ins.w;
+              const paneH = ins.h;
+              const panePaths = generateWindowBackPanePath(paneW, paneH);
+              row3.push({ type: 'win-pane', paths: panePaths, w: paneW, h: paneH, x, y: currentY, label: `W${i+1}B` });
+              x += paneW + spacing;
+              const trim = generateWindowTrimPath(paneW, paneH, scaled.trimMargin);
+              row3.push({ type: 'win-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `W${i+1}T` });
+              x += trim.totalW + spacing;
+              rowMaxH = Math.max(rowMaxH, paneH, trim.totalH);
+            }
+            const row3Width = x - spacing;
+            if (windowInserts.length > 0) currentY += rowMaxH + spacing;
+
+            // Row 4: door inserts
+            let row4 = [];
+            x = 0;
+            rowMaxH = 0;
+            for (let i = 0; i < doorInserts.length; i++) {
+              const ins = doorInserts[i];
+              const trim = generateDoorTrimPath(ins.w, ins.h, scaled.doorTrimMargin, doorClearance);
+              row4.push({ type: 'door-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `D${i+1}T` });
+              x += trim.totalW + spacing;
+              const panel = generateDoorPanelPath(ins.w, ins.h, doorClearance);
+              row4.push({ type: 'door-panel', paths: panel.paths, w: panel.w, h: panel.h, x, y: currentY, label: `D${i+1}P` });
+              x += panel.w + spacing;
+              rowMaxH = Math.max(rowMaxH, trim.totalH, panel.h);
+            }
+            const row4Width = x - spacing;
+            if (doorInserts.length > 0) currentY += rowMaxH + spacing;
+
+            const totalWidth  = Math.max(row1Width, row2Width, row3Width, row4Width, 1);
+            const totalHeight = currentY;
+            const svgW = convertFromInches(totalWidth);
+            const svgH = convertFromInches(totalHeight);
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            svg += `<!-- Generated by Scale Model Building Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<!-- Scale: ${SCALES[scale].label} | Footprint: ${footprintWidthFt}x${footprintDepthFt} ft | Stories: ${stories} -->\n`;
+            svg += `<svg width="${svgW}${units === 'mm' ? 'mm' : 'in'}" height="${svgH}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+            svg += `  <defs><style>.cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }</style></defs>\n`;
+
+            // Wall panels
+            for (const p of wallsRow) {
+              svg += `  <g id="${p.name}" transform="translate(${p.x + p.offsetX}, ${p.y + p.offsetY})">\n`;
+              svg += `    <path d="${p.outline}" class="cut-line" />\n`;
+              for (const op of p.openingPaths) {
+                svg += `    <path d="${op}" class="cut-line" />\n`;
+              }
+              svg += `  </g>\n`;
+            }
+            // Row 2
+            for (const r of row2) {
+              if (r.type === 'balcony') {
+                svg += `  <g transform="translate(${r.x}, ${r.y})">\n`;
+                svg += `    <path d="${r.paths.outer}" class="cut-line" />\n`;
+                svg += `    <path d="${r.paths.inner}" class="cut-line" />\n`;
+                svg += `  </g>\n`;
+              } else {
+                svg += `  <g transform="translate(${r.x}, ${r.y})"><path d="${r.path}" class="cut-line" /></g>\n`;
+              }
+            }
+            // Row 3 (window inserts)
+            for (const r of row3) {
+              svg += `  <g transform="translate(${r.x}, ${r.y})">\n`;
+              if (r.type === 'win-pane') {
+                for (const pp of r.paths) svg += `    <path d="${pp}" class="cut-line" />\n`;
+              } else {
+                svg += `    <path d="${r.outer}" class="cut-line" />\n`;
+                svg += `    <path d="${r.inner}" class="cut-line" />\n`;
+              }
+              svg += `  </g>\n`;
+            }
+            // Row 4 (door inserts)
+            for (const r of row4) {
+              svg += `  <g transform="translate(${r.x}, ${r.y})">\n`;
+              if (r.type === 'door-panel') {
+                for (const pp of r.paths) svg += `    <path d="${pp}" class="cut-line" />\n`;
+              } else {
+                svg += `    <path d="${r.outer}" class="cut-line" />\n`;
+                svg += `    <path d="${r.inner}" class="cut-line" />\n`;
+              }
+              svg += `  </g>\n`;
+            }
+
+            svg += `</svg>`;
+            return { svg, totalWidth, totalHeight, layout: { wallsRow, row2, row3, row4 } };
+          }, [scale, footprintWidthFt, footprintDepthFt, stories, roofPitch, ridgeDirection, includeFloor, secondFloorMode, balconyWidth, wallConfig, gableWindows, doorClearance, materialThickness, units, scaled, gablePeakCut, pitchRad]);
+
+          // ====================================================
+          // BED FIT CHECK
+          // ====================================================
+          const bedCheck = useMemo(() => {
+            const { totalWidth, totalHeight, layout } = generateSVG();
+            // Largest piece
+            let largest = { w: 0, h: 0, name: 'none' };
+            for (const p of layout.wallsRow) {
+              if (p.bboxW * p.bboxH > largest.w * largest.h) largest = { w: p.bboxW, h: p.bboxH, name: p.label };
+            }
+            for (const r of layout.row2) {
+              if (r.w * r.h > largest.w * largest.h) largest = { w: r.w, h: r.h, name: r.label };
+            }
+            const fits = largest.w <= bedSize.width && largest.h <= bedSize.height;
+            const tight = largest.w > bedSize.width - 0.5 || largest.h > bedSize.height - 0.5;
+            return { fits, tight, largest };
+          }, [generateSVG, bedSize]);
+
+          // ====================================================
+          // DOWNLOAD
+          // ====================================================
+          const downloadSVG = () => {
+            gtag('event', 'download_svg', { 'tool_name': 'scale_model_building_designer' });
+            const { svg } = generateSVG();
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const safe = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'building';
+            link.download = `${safe}-${scale}-${footprintWidthFt}x${footprintDepthFt}ft-${stories}story.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          };
+
+          // ====================================================
+          // INPUT HANDLERS
+          // ====================================================
+          const handleFootprintChange = (field, value) => {
+            const v = parseFloat(value);
+            if (isNaN(v) || v < 6) return;
+            if (field === 'width') setFootprintWidthFt(v);
+            else setFootprintDepthFt(v);
+          };
+
+          const handleWallConfig = (story, wallKey, field, value) => {
+            setWallConfig(prev => ({
+              ...prev,
+              [story]: {
+                ...prev[story],
+                [wallKey]: {
+                  ...prev[story][wallKey],
+                  [field]: field === 'windows' ? parseInt(value) : value
+                }
+              }
+            }));
+          };
+
+          const handleThicknessChange = (value) => {
+            const v = parseFloat(value);
+            if (!isNaN(v) && v > 0) setMaterialThickness(convertToInches(v));
+          };
+
+          const handleBalconyChange = (value) => {
+            const v = parseFloat(value);
+            if (!isNaN(v) && v >= 0.25) setBalconyWidth(convertToInches(v));
+          };
+
+          const handleDoorClearanceChange = (value) => {
+            const v = parseFloat(value);
+            if (!isNaN(v) && v >= 0) setDoorClearance(convertToInches(v));
+          };
+
+          // ====================================================
+          // RENDER
+          // ====================================================
+          const wallLayoutsForPreview = buildAllWallLayouts();
+
+          return (
+            <div className="max-w-7xl mx-auto p-6 bg-white">
+              <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Scale Model Building Designer</h1>
+              <p className="text-center text-gray-600 mb-1">Wargaming terrain and model railroad buildings with lift-off gable roofs</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v1.0.0</p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Settings Column */}
+                <div className="space-y-6">
+
+                  {/* Scale */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Scale</h2>
+                    <select value={scale} onChange={e => setScale(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded">
+                      {Object.entries(SCALES).map(([k, v]) => (
+                        <option key={k} value={k}>{v.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2">All real-world dimensions (doors, windows, story height) are scaled from this ratio.</p>
+                  </div>
+
+                  {/* Footprint */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Footprint (real-world feet)</h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Width (ft)</label>
+                        <input type="number" value={footprintWidthInput} onChange={e => { setFootprintWidthInput(e.target.value); handleFootprintChange('width', e.target.value); }} step="1" min="6" className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Depth (ft)</label>
+                        <input type="number" value={footprintDepthInput} onChange={e => { setFootprintDepthInput(e.target.value); handleFootprintChange('depth', e.target.value); }} step="1" min="6" className="w-full px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-600">
+                      <p>At {scale} scale:</p>
+                      <p className="text-gray-700">Cut size: {formatUnit(convertFromInches(scaled.footprintWidth))} × {formatUnit(convertFromInches(scaled.footprintDepth))} {units}</p>
+                      <p className="text-gray-700">Story height: {formatUnit(convertFromInches(scaled.storyHeight))} {units}</p>
+                    </div>
+                  </div>
+
+                  {/* Stories */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Stories</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer"><input type="radio" checked={stories === 1} onChange={() => setStories(1)} className="mr-2" /><span>1 Story</span></label>
+                      <label className="flex items-center cursor-pointer"><input type="radio" checked={stories === 2} onChange={() => setStories(2)} className="mr-2" /><span>2 Stories</span></label>
+                    </div>
+                  </div>
+
+                  {/* Roof */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Roof</h2>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Pitch</label>
+                      <select value={roofPitch} onChange={e => setRoofPitch(parseInt(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                        {ROOF_PITCHES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Ridge Direction</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center cursor-pointer"><input type="radio" checked={ridgeDirection === 'width'} onChange={() => setRidgeDirection('width')} className="mr-2" /><span>Along Width</span></label>
+                        <label className="flex items-center cursor-pointer"><input type="radio" checked={ridgeDirection === 'depth'} onChange={() => setRidgeDirection('depth')} className="mr-2" /><span>Along Depth</span></label>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Gable ends will be on the walls perpendicular to the ridge.</p>
+                    </div>
+                  </div>
+
+                  {/* Floor — ground floor always available; balcony only for 2-story non-HO */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Floor</h2>
+                    <label className="flex items-center cursor-pointer mb-3">
+                      <input type="checkbox" checked={includeFloor} onChange={e => setIncludeFloor(e.target.checked)} className="mr-3 h-4 w-4" />
+                      <span>Include ground floor panel</span>
+                    </label>
+                    {stories === 2 && (
+                      scale === 'HO' ? (
+                        <p className="text-sm text-gray-600 mt-2 pt-3 border-t border-gray-200">
+                          Second-story floors aren't generated at HO scale — HO buildings are display-only and don't need interior access.
+                        </p>
+                      ) : (
+                        <div className="mt-2 pt-3 border-t border-gray-200">
+                          <label className="block text-sm font-medium text-gray-600 mb-2">Second story</label>
+                          <div className="space-y-1">
+                            <label className="flex items-center cursor-pointer"><input type="radio" checked={secondFloorMode === 'none'} onChange={() => setSecondFloorMode('none')} className="mr-2" /><span>None</span></label>
+                            <label className="flex items-center cursor-pointer"><input type="radio" checked={secondFloorMode === 'balcony'} onChange={() => setSecondFloorMode('balcony')} className="mr-2" /><span>Balcony ring (wargaming)</span></label>
+                          </div>
+                          {secondFloorMode === 'balcony' && (
+                            <div className="mt-3">
+                              <label className="block text-sm text-gray-600 mb-1">Balcony width ({units})</label>
+                              <input type="number" value={balconyWidthInput} onChange={e => { setBalconyWidthInput(e.target.value); handleBalconyChange(e.target.value); }} step={units === 'mm' ? '1' : '0.125'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                              <p className="text-xs text-gray-500 mt-1">~1" fits a standard miniature base.</p>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {/* Per-Wall Configuration */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Wall Configuration</h2>
+                    {Array.from({ length: stories }, (_, i) => i + 1).map(s => (
+                      <div key={s} className="mb-4">
+                        {stories === 2 && <h3 className="font-medium text-gray-700 mb-2">Story {s}</h3>}
+                        <div className="grid grid-cols-2 gap-3">
+                          {WALL_KEYS.map(wk => {
+                            const ridgeAlongWidth = ridgeDirection === 'width';
+                            const isGableWall = ridgeAlongWidth
+                              ? (wk === 'left' || wk === 'right')
+                              : (wk === 'front' || wk === 'back');
+                            const isTopStory = s === stories;
+                            return (
+                              <div key={wk} className="bg-white p-3 rounded border border-gray-200">
+                                <div className="font-medium text-gray-700 text-sm mb-2">{WALL_LABELS[wk]}{isGableWall ? ' (gable)' : ''}</div>
+                                <div className="mb-2">
+                                  <label className="block text-xs text-gray-600 mb-1">Door</label>
+                                  <select value={wallConfig[s][wk].door} onChange={e => handleWallConfig(s, wk, 'door', e.target.value)} className="w-full px-2 py-1 text-sm border border-gray-300 rounded">
+                                    <option value="none">None</option>
+                                    <option value="left">Left</option>
+                                    <option value="center">Center</option>
+                                    <option value="right">Right</option>
+                                  </select>
+                                </div>
+                                <div className={isGableWall && isTopStory ? 'mb-2' : ''}>
+                                  <label className="block text-xs text-gray-600 mb-1">Windows</label>
+                                  <select value={wallConfig[s][wk].windows} onChange={e => handleWallConfig(s, wk, 'windows', e.target.value)} className="w-full px-2 py-1 text-sm border border-gray-300 rounded">
+                                    <option value="0">0</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3 (no door)</option>
+                                  </select>
+                                </div>
+                                {isGableWall && isTopStory && (
+                                  <label className="flex items-center text-xs text-gray-600 cursor-pointer">
+                                    <input type="checkbox" checked={gableWindows[wk]} onChange={e => setGableWindows(prev => ({ ...prev, [wk]: e.target.checked }))} className="mr-2" />
+                                    Gable (attic) window
+                                  </label>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Validation */}
+                  {validation.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                      <h3 className="font-semibold text-yellow-800 mb-2">Layout warnings</h3>
+                      <ul className="text-sm text-yellow-700 list-disc pl-5 space-y-1">
+                        {validation.map((w, i) => <li key={i}>{w}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Door Clearance */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Door Clearance</h2>
+                    <label className="block text-sm text-gray-600 mb-1">Gap around floating door panel ({units})</label>
+                    <input type="number" value={doorClearanceInput} onChange={e => { setDoorClearanceInput(e.target.value); handleDoorClearanceChange(e.target.value); }} step={units === 'mm' ? '0.1' : '0.005'} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                    <p className="text-xs text-gray-500 mt-1">0.03" typical. Door floats in trim; builder adds hinges.</p>
+                  </div>
+
+                  {/* Units */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Units (cut dimensions)</h2>
+                    <div className="flex gap-4">
+                      <label className="flex items-center cursor-pointer"><input type="radio" checked={units === 'inches'} onChange={() => setUnits('inches')} className="mr-2" /><span>Inches</span></label>
+                      <label className="flex items-center cursor-pointer"><input type="radio" checked={units === 'mm'} onChange={() => setUnits('mm')} className="mr-2" /><span>Millimeters</span></label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Footprint is always in real-world feet; this toggle affects the cut SVG and material thickness.</p>
+                  </div>
+
+                  {/* Material Thickness */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Thickness</h2>
+                    <select value={materialPreset} onChange={e => { setMaterialPreset(e.target.value); if (e.target.value !== 'custom') setCustomThickness(''); }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                      {units === 'inches' ? (
+                        <>
+                          <option value="0.125">1/8" (0.125")</option>
+                          <option value="0.118">Nominal 1/8" (0.118")</option>
+                          <option value="0.25">1/4" (0.250")</option>
+                          <option value="0.236">Nominal 1/4" (0.236")</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="3.0">3.0mm</option>
+                          <option value="3.175">3.175mm (1/8")</option>
+                          <option value="6.0">6.0mm</option>
+                          <option value="6.35">6.35mm (1/4")</option>
+                        </>
+                      )}
+                      <option value="custom">Custom</option>
+                    </select>
+                    {materialPreset === 'custom' && (
+                      <input type="number" value={customThickness} onChange={e => { setCustomThickness(e.target.value); handleThicknessChange(e.target.value); }} placeholder={`Enter thickness in ${units}`} step={units === 'mm' ? '0.1' : '0.001'} className="w-full mt-2 px-3 py-2 border border-gray-300 rounded" />
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">Current: {formatUnit(convertFromInches(materialThickness))} {units}</p>
+                  </div>
+
+                  {/* Bed Size Check */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Material Size Check</h2>
+                    <select value={bedPreset} onChange={e => { setBedPreset(e.target.value); if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x').map(Number); setBedSize({ width: w, height: h }); } }} className="w-full px-3 py-2 border border-gray-300 rounded">
+                      <option value="12x12">12" x 12"</option>
+                      <option value="12x20">12" x 20"</option>
+                      <option value="20x28">20" x 28"</option>
+                      <option value="24x36">24" x 36"</option>
+                      <option value="40x28">40" x 28"</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    {bedPreset === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <input type="number" placeholder="Width" value={customBedWidth} onChange={e => { setCustomBedWidth(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, width: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                        <input type="number" placeholder="Height" value={customBedHeight} onChange={e => { setCustomBedHeight(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBedSize(p => ({ ...p, height: v })); }} className="px-3 py-2 border border-gray-300 rounded" />
+                      </div>
+                    )}
+                    <div className={`mt-3 rounded p-3 border ${bedCheck.fits ? (bedCheck.tight ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200') : 'bg-red-50 border-red-200'}`}>
+                      <p className={`font-semibold ${bedCheck.fits ? (bedCheck.tight ? 'text-yellow-800' : 'text-green-800') : 'text-red-800'}`}>
+                        {bedCheck.fits ? (bedCheck.tight ? 'Tight fit — verify carefully' : 'All pieces fit') : "Won't fit!"}
+                      </p>
+                      <p className="text-sm">Largest: {bedCheck.largest.w.toFixed(2)}" x {bedCheck.largest.h.toFixed(2)}" ({bedCheck.largest.name})</p>
+                      {!bedCheck.fits && <p className="text-sm">Bed: {bedSize.width}" x {bedSize.height}"</p>}
+                    </div>
+                  </div>
+
+                  {/* Color Guide */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm">
+                    <h3 className="font-semibold text-gray-700 mb-2">SVG Color Guide</h3>
+                    <div className="space-y-1 text-gray-600">
+                      <p>Red = Cut lines</p>
+                      <p>Blue = Scoring/line engraving</p>
+                      <p>Black = Raster/fill engraving</p>
+                    </div>
+                  </div>
+
+                  {/* Filename */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Filename</h2>
+                    <div className="flex items-center">
+                      <input type="text" value={filename} onChange={e => setFilename(e.target.value)} placeholder="e.g., painted-lady" className="flex-1 px-3 py-2 border border-gray-300 rounded-l" />
+                      <span className="px-3 py-2 bg-gray-200 border border-l-0 border-gray-300 rounded-r text-gray-600">.svg</span>
+                    </div>
+                  </div>
+
+                  <button onClick={downloadSVG} className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+                    Download Building SVG
+                  </button>
+                </div>
+
+                {/* Preview Column */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-700">Preview</h2>
+                    <select value={zoomLevel} onChange={e => setZoomLevel(parseFloat(e.target.value))} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value={0.25}>25%</option>
+                      <option value={0.5}>50%</option>
+                      <option value={1}>100%</option>
+                      <option value={1.5}>150%</option>
+                      <option value={2}>200%</option>
+                    </select>
+                  </div>
+
+                  <BuildingPreview
+                    wallLayouts={wallLayoutsForPreview}
+                    scaled={scaled}
+                    stories={stories}
+                    ridgeDirection={ridgeDirection}
+                    gablePeakCut={gablePeakCut}
+                    materialThickness={materialThickness}
+                    zoomLevel={zoomLevel}
+                    includeFloor={includeFloor}
+                    secondFloorMode={secondFloorMode}
+                    balconyWidth={balconyWidth}
+                    calculateTabCount={calculateTabCount}
+                    generateTabPositions={generateTabPositions}
+                    generateWallPanelPath={generateWallPanelPath}
+                    generateFloorPath={generateFloorPath}
+                    generateRoofSlopePath={generateRoofSlopePath}
+                    generateBalconyRingPaths={generateBalconyRingPaths}
+                    pitchRad={pitchRad}
+                    footprintWidthFt={footprintWidthFt}
+                    footprintDepthFt={footprintDepthFt}
+                    scaleRatio={SCALES[scale].ratio}
+                    computeBalconySlots={computeBalconySlots}
+                    computeGableWindow={computeGableWindow}
+                  />
+
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p><strong>Assembly:</strong></p>
+                    <p>Walls sit on top of floor (tabs into notches)</p>
+                    <p>Gable walls have triangular peaks</p>
+                    <p>Roof slopes rest on angled wall tops — lift off for interior access</p>
+                    <p>Window/door trim glues to exterior. Door panel floats; add your own hinges.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ====================================================
+        // PREVIEW COMPONENT — copies 5-sided-box cross layout for the 4 walls + floor
+        // Adds roof slopes and gable triangles using the same alignment rules.
+        // ====================================================
+        const BuildingPreview = (props) => {
+          const {
+            wallLayouts, scaled, stories, ridgeDirection, gablePeakCut,
+            materialThickness, zoomLevel, includeFloor, secondFloorMode, balconyWidth,
+            calculateTabCount, generateWallPanelPath, generateFloorPath,
+            generateRoofSlopePath, generateBalconyRingPaths, pitchRad,
+            footprintWidthFt, footprintDepthFt, scaleRatio,
+            computeBalconySlots, computeGableWindow,
+          } = props;
+
+          const ridgeAlongWidth = ridgeDirection === 'width';
+          const exteriorW = scaled.footprintWidth;
+          const exteriorD = scaled.footprintDepth;
+          const storyH = scaled.storyHeight;
+          const totalWallH = storyH * stories;
+
+          // Which walls are gable-ended
+          const isGableWall = (wk) => ridgeAlongWidth
+            ? (wk === 'left' || wk === 'right')
+            : (wk === 'front' || wk === 'back');
+
+          // Does this building have any floor? Governs bottom-edge tabs.
+          const hasAnyFloor = includeFloor;
+
+          // Helper: build path for a single wall (all stories stacked).
+          // Gable walls get NOTCHES (body = exterior) so the peak base spans corner-to-corner;
+          // eave walls get TABS (body = interior) that slot into the gable walls.
+          const wallPath = (wk) => {
+            const layout = wallLayouts[wk];
+            const wallLength = layout.wallLength;
+            const isGable = isGableWall(wk);
+            const isWidthWall = (wk === 'front' || wk === 'back');
+            const leftEdge  = isGable ? 'notches' : 'tabs';
+            const rightEdge = isGable ? 'notches' : 'tabs';
+            const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
+            const openingShift = isGable ? 0 : materialThickness;
+            const allOpenings = [];
+            for (const s of layout.perStory) {
+              for (const op of s.layout.openings) {
+                allOpenings.push({
+                  leftX: op.leftX - openingShift,
+                  bottomY: op.bottomY,
+                  width: op.width,
+                  height: op.height
+                });
+              }
+            }
+            // Balcony slots live in the 1st-story panel near its top. In the preview's
+            // full-wall frame, the 1st-story panel bottom is at y=0 so bottomY passes through.
+            if (stories === 2 && secondFloorMode === 'balcony' && computeBalconySlots) {
+              const slots = computeBalconySlots(wk, wallLength);
+              slots.forEach(s => allOpenings.push({
+                leftX: s.leftX - openingShift,
+                bottomY: s.bottomY,
+                width: s.width,
+                height: s.height
+              }));
+            }
+            // Gable window — only on gable walls (top story)
+            // computeGableWindow returns bottomY in a single-story panel frame
+            // (bottomY = panelHeight + offsetAbovePanelTop). For the preview's full-wall frame
+            // we add (stories-1)*storyHeight so it lands in the top story's peak area.
+            if (isGable && computeGableWindow) {
+              const gw = computeGableWindow(wk, wallLength, bodyLength, scaled.storyHeight);
+              if (gw.fits) {
+                allOpenings.push({
+                  leftX: gw.opening.leftX - openingShift,
+                  bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
+                  width: gw.opening.width,
+                  height: gw.opening.height
+                });
+              }
+            }
+            const topEdge = isGable ? { type: 'gable', peakHeight: gablePeakCut } : { type: 'flat' };
+            return {
+              path: generateWallPanelPath({
+                wallLength: bodyLength,
+                panelHeight: totalWallH,
+                leftEdge, rightEdge,
+                bottomEdge: hasAnyFloor ? 'tabs' : 'plain',
+                topEdge,
+                openings: allOpenings,
+                bottomDistributeAcross: wallLength,
+              }),
+              bodyLength,
+              bboxLength: wallLength,
+              isWidthWall,
+            };
+          };
+
+          const backWall  = wallPath('back');
+          const frontWall = wallPath('front');
+          const leftWall  = wallPath('left');
+          const rightWall = wallPath('right');
+
+          // Floor path
+          const showFloor = hasAnyFloor;
+          const floorPath = generateFloorPath(exteriorW, exteriorD,
+            calculateTabCount(exteriorW), calculateTabCount(exteriorD));
+
+          // Roof slopes — with overhang past gable ends and eave
+          const footprintRidgeDim = ridgeAlongWidth ? exteriorW : exteriorD;
+          const ridgeRunCut = ridgeAlongWidth ? exteriorD : exteriorW;
+          const eaveToRidgeHypotenuse = (ridgeRunCut / 2) / Math.cos(pitchRad);
+          const overhang = scaled.roofOverhang;
+          const ridgeLength = footprintRidgeDim + 2 * overhang;
+          const slopeWidth  = eaveToRidgeHypotenuse + overhang;
+          const roofPath = generateRoofSlopePath(ridgeLength, slopeWidth);
+
+          // ===== VIEWBOX =====
+          // Gable peaks extend vertically on front/back when ridge is along depth,
+          // or horizontally on left/right when ridge is along width.
+          const peakExtraV = ridgeAlongWidth ? 0 : gablePeakCut;
+          const peakExtraH = ridgeAlongWidth ? gablePeakCut : 0;
+
+          // Pad scales with content so tall 2-story + Victorian pitch doesn't clip the peaks
+          const vbPad = Math.max(1, totalWallH * 0.25, gablePeakCut * 0.15);
+          const gap = 0.25;
+          const roofGap = 0.5;
+          const wallToRoofGap = 1;
+
+          // Equal gap between all four walls and floor
+          const wallFloorGap = gap;
+
+          const xMin = -peakExtraH - vbPad;
+          const xMax = exteriorD + gap + exteriorW + gap + totalWallH + peakExtraH + vbPad;
+          const yMin = -wallFloorGap - totalWallH - peakExtraV - vbPad;
+          const yMaxWalls = exteriorD + wallFloorGap + totalWallH + peakExtraV;
+          const showBalconyPiece = stories === 2 && secondFloorMode === 'balcony';
+          const balconyExtraH = showBalconyPiece ? exteriorD + 0.5 : 0;
+          const yMax = yMaxWalls + wallToRoofGap + slopeWidth + roofGap + slopeWidth + balconyExtraH + vbPad;
+
+          const vbWidth = xMax - xMin;
+          const vbHeight = yMax - yMin;
+
+          // BBOX alignment:
+          //   Width walls (tabbed L/R): body drawn starting at materialThickness inside the bbox edge
+          //   Depth walls (notched L/R): body IS the bbox on the main axis
+          const mat = materialThickness;
+          // Tabbed (eave) walls need their body shifted by material so tab tips align with floor corners.
+          // Notched (gable) walls have body = exterior already — no shift.
+          const backBodyOffsetX  = isGableWall('back')  ? 0 : mat;
+          const frontBodyOffsetX = isGableWall('front') ? 0 : mat;
+
+          return (
+            <div className="border border-gray-300 rounded-lg p-4 bg-white" style={{ maxHeight: '800px', width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+              <div className="text-center mb-4">
+                <p className="text-sm text-gray-600 font-semibold">Unfolded Building</p>
+                <p className="text-xs text-gray-500">Walls in cross layout; roof slopes below</p>
+              </div>
+              <svg
+                width={`${vbWidth * 96 * zoomLevel}px`}
+                height={`${vbHeight * 96 * zoomLevel}px`}
+                viewBox={`${xMin} ${yMin} ${vbWidth} ${vbHeight}`}
+                style={{ background: '#f9fafb', display: 'block' }}
+              >
+                <defs>
+                  <style>{`
+                    .cut-line { stroke: #dc2626; stroke-width: 0.02; fill: #f3e5ab; }
+                    .opening  { stroke: #dc2626; stroke-width: 0.02; fill: #ffffff; }
+                    .label    { fill: #10b981; font-family: Arial; font-size: 0.28px; }
+                  `}</style>
+                </defs>
+
+                {/* Back Wall — gap above floor to match the L/R sides */}
+                <g transform={`translate(${exteriorD + gap + backBodyOffsetX}, ${-wallFloorGap - totalWallH})`}>
+                  <path d={backWall.path.outline} className="cut-line" />
+                  {backWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                  <text className="label" x={backWall.bodyLength / 2} y={-0.4} textAnchor="middle">Back</text>
+                </g>
+
+                {/* Middle row: Left | Floor | Right */}
+                <g transform={`translate(0, 0)`}>
+                  {/* Left wall — rotated -90, body offset = 0 (notched) */}
+                  <g transform={`translate(${exteriorD}, ${exteriorD / 2}) rotate(-90) translate(${-leftWall.bodyLength / 2}, ${-totalWallH})`}>
+                    <path d={leftWall.path.outline} className="cut-line" />
+                    {leftWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                    <text className="label" x={leftWall.bodyLength / 2} y={-0.3} textAnchor="middle">Left</text>
+                  </g>
+
+                  {/* Floor */}
+                  <g transform={`translate(${exteriorD + gap}, 0)`}>
+                    {showFloor ? (
+                      <path d={floorPath} className="cut-line" />
+                    ) : (
+                      <rect x="0" y="0" width={exteriorW} height={exteriorD} fill="#f3f4f6" stroke="#d1d5db" strokeWidth="0.02" strokeDasharray="0.1,0.1" />
+                    )}
+                    <text className="label" x={exteriorW / 2} y={exteriorD / 2} textAnchor="middle" dominantBaseline="middle">{showFloor ? 'Floor' : 'footprint'}</text>
+                  </g>
+
+                  {/* Right wall — rotated +90, body offset = 0 (notched) */}
+                  <g transform={`translate(${exteriorD + gap + exteriorW + gap + totalWallH}, ${exteriorD / 2}) rotate(90) translate(${-rightWall.bodyLength / 2}, 0)`}>
+                    <path d={rightWall.path.outline} className="cut-line" />
+                    {rightWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                    <text className="label" x={rightWall.bodyLength / 2} y={-0.3} textAnchor="middle">Right</text>
+                  </g>
+                </g>
+
+                {/* Front Wall — rotated 180, with matching gap to floor */}
+                <g transform={`translate(${exteriorD + gap + exteriorW / 2}, ${exteriorD + wallFloorGap + totalWallH}) rotate(180) translate(${-frontWall.bodyLength / 2}, 0)`}>
+                  <path d={frontWall.path.outline} className="cut-line" />
+                  {frontWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                  <text className="label" x={frontWall.bodyLength / 2} y={-0.3} textAnchor="middle">Front</text>
+                </g>
+
+                {/* Roof slopes below front wall */}
+                <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap})`}>
+                  <path d={roofPath} className="cut-line" />
+                  <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof A</text>
+                </g>
+                <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap + slopeWidth + roofGap})`}>
+                  <path d={roofPath} className="cut-line" />
+                  <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof B</text>
+                </g>
+
+                {/* Balcony ring — separate piece below roofs */}
+                {showBalconyPiece && (() => {
+                  const innerW = Math.max(0.25, exteriorW - 2 * balconyWidth);
+                  const innerD = Math.max(0.25, exteriorD - 2 * balconyWidth);
+                  const bp = generateBalconyRingPaths(exteriorW, exteriorD, innerW, innerD, calculateTabCount(exteriorW), calculateTabCount(exteriorD));
+                  const balconyY = yMaxWalls + wallToRoofGap + slopeWidth + roofGap + slopeWidth + 0.5;
+                  return (
+                    <g transform={`translate(${exteriorD + gap + (exteriorW - exteriorW) / 2}, ${balconyY})`}>
+                      <path d={bp.outer} className="cut-line" />
+                      <path d={bp.inner} className="opening" />
+                      <text className="label" x={exteriorW / 2} y={exteriorD / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Balcony</text>
+                    </g>
+                  );
+                })()}
+              </svg>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<BuildingDesigner />, document.getElementById('root'));
+    </script>
+</body>
+</html>
