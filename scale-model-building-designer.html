@@ -1,19 +1,23 @@
 <!--
   Tool: Scale Model Building Designer
-  Version: v1.1.0
-  Last Updated: June 10, 2026
+  Version: v2.0.0
+  Last Updated: June 11, 2026
   Author: GreyLightMay
   Website: https://greylightmay.com
 
   Based on 5-sided-box-designer-v2.html per DESIGNER-PATTERNS.md.
   Preview transforms and path generation primitives copied verbatim.
+
+  v2.0: Ruined walls for wargaming — seeded procedural ruin variants
+  (collapsed tops, blown corners, breaches) per
+  specs/scale-model-building-designer-v2.md.
 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scale Model Building Designer v1.1.0</title>
+    <title>Scale Model Building Designer v2.0.0</title>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
     <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -71,6 +75,303 @@
           { value: 60, label: '60° (Steep)' },
         ];
 
+        // ============================================================
+        // RUIN CONSTANTS (v2.0) — see specs/scale-model-building-designer-v2.md
+        // ============================================================
+        const RUIN_STYLE_LABELS = {
+          intact:    'Intact',
+          collapsed: 'Collapsed top',
+          corner:    'Blown corner',
+          breach:    'Breached',
+        };
+        // Default per-wall styles applied when the building is first switched to Ruined
+        const RUIN_DEFAULT_STYLES = { front: 'breach', back: 'collapsed', left: 'collapsed', right: 'corner' };
+
+        // Cuttability floors (cut inches)
+        const RUIN_MIN_SEG       = 0.04;  // ~1mm — smallest jag step the laser cuts cleanly
+        const RUIN_MIN_CORNER    = 0.5;   // minimum surviving corner stub height
+        const TAB_BREAKPOINT     = 1.25;  // joinery segments shorter than this use small tabs
+        const TAB_WIDTH_STD      = 0.5;
+        const TAB_WIDTH_SMALL    = 0.25;
+
+        // Real-world masonry texture for break profiles (feet)
+        const RUIN_COURSE_FT     = 8 / 12;  // 8" brick/block course height
+        const RUIN_RUN_MIN_FT    = 1.0;     // shortest horizontal run in a break profile
+        const RUIN_RUN_MAX_FT    = 2.5;     // longest horizontal run
+
+        // Damage-level parameter bands. Heights are fractions of total wall height.
+        const DAMAGE_PARAMS = {
+          light:  { cornerBand: [0.70, 0.95], blownBand: [0.40, 0.60], keptBand: [0.85, 1.00], sag: 0.10, breachW: [0.20, 0.32], breachH: [0.35, 0.50] },
+          medium: { cornerBand: [0.45, 0.80], blownBand: [0.22, 0.42], keptBand: [0.80, 1.00], sag: 0.18, breachW: [0.28, 0.42], breachH: [0.45, 0.62] },
+          heavy:  { cornerBand: [0.28, 0.58], blownBand: [0.10, 0.28], keptBand: [0.70, 0.95], sag: 0.28, breachW: [0.38, 0.55], breachH: [0.55, 0.75] },
+        };
+
+        // Seeded PRNG (mulberry32) — ruins must be deterministic so the preview,
+        // bed-fit check, and downloaded SVG always show the same building.
+        const mulberry32 = (seed) => {
+          let a = seed >>> 0;
+          return () => {
+            a |= 0; a = (a + 0x6D2B79F5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        };
+
+        // Each wall's left/right edge maps to a shared building corner so both
+        // adjacent walls agree on one surviving height per corner (corner-first rule).
+        //
+        // The pairing follows the cross-layout FOLD (the same assembly the preview
+        // shows): floor flat, walls fold up around their floor edge. Under that fold,
+        // in path coordinates (x=0 = path-left):
+        //   back  : path-left = NW corner, path-right = NE
+        //   left  : path-left = SW,        path-right = NW
+        //   right : path-left = NE,        path-right = SE
+        //   front : path-left = SE,        path-right = SW   (front is rotated 180 in the fold)
+        // So the mating pairs are: NW = back.left + left.right, NE = back.right + right.left,
+        // SW = front.right + left.left, SE = front.left + right.right.
+        // Getting this table wrong makes the two walls at a corner disagree on the
+        // surviving height — mismatched tab counts, positions, and widths.
+        const WALL_CORNERS = {
+          front: { left: 'SE', right: 'SW' },
+          back:  { left: 'NW', right: 'NE' },
+          left:  { left: 'SW', right: 'NW' },
+          right: { left: 'NE', right: 'SE' },
+        };
+        const CORNER_KEYS = ['NW', 'NE', 'SW', 'SE'];
+
+        // ============================================================
+        // RUIN GEOMETRY HELPERS (pure functions, body coordinates,
+        // y measured DOWN from the panel top)
+        // ============================================================
+
+        // Jagged break profile: a random walk quantized to the masonry course grid,
+        // stepping between the two surviving corner heights with a sag toward the middle.
+        // Returns rectilinear points [{x,y}...] from (0, yLeft) to (L, yRight).
+        const buildBreakProfile = (rng, L, yLeft, yRight, totalH, sagFrac, courseH, runMin, runMax, maxY) => {
+          // The walk stays on a course grid anchored at yLeft. Corner heights are
+          // pre-quantized to the same grid, so every step — including the final
+          // landing at the right corner — is either zero or a full course, never
+          // a sub-minimum sliver.
+          const minYg = yLeft - Math.floor(yLeft / courseH) * courseH;          // highest grid value ≥ 0
+          const maxYg = yLeft + Math.floor((maxY - yLeft) / courseH) * courseH; // lowest grid value ≤ maxY
+          const pts = [{ x: 0, y: yLeft }];
+          let x = 0, y = yLeft;
+          while (true) {
+            const run = runMin + rng() * (runMax - runMin);
+            if (x + run >= L - runMin * 0.6) {
+              // Final stretch: land on the right corner height with a normal sideways-
+              // then-down jag at the current boundary, then run out to the corner.
+              // NEVER patch the height with a vertical at x = L itself — that would
+              // make the laser cut up and retrace back down the corner edge line.
+              if (Math.abs(y - yRight) > 1e-9) {
+                if (x <= 1e-9) { x = Math.min(runMin, L / 2); pts.push({ x, y }); }
+                pts.push({ x, y: yRight });
+                y = yRight;
+              }
+              pts.push({ x: L, y });
+              break;
+            }
+            x += run;
+            pts.push({ x, y });
+            const t = x / L;
+            const target = yLeft + (yRight - yLeft) * t + sagFrac * totalH * Math.sin(Math.PI * t);
+            let steps = Math.round((target - y) / courseH + (rng() * 2 - 1) * 1.2);
+            if (steps === 0) steps = rng() < 0.5 ? -1 : 1;
+            const newY = Math.min(Math.max(y + steps * courseH, minYg), maxYg);
+            if (Math.abs(newY - y) >= courseH * 0.5) {
+              y = newY;
+              pts.push({ x, y });
+            }
+          }
+          return pts;
+        };
+
+        // Remove zero-width spikes from a polyline: consecutive duplicate points and
+        // 180° reversals (the cut going out and retracing back over the same line).
+        // Retraces leave no gap in the finished piece but double-cut the material.
+        const sanitizePts = (ptsIn) => {
+          const pts = [];
+          for (const p of ptsIn) {
+            pts.push({ x: p.x, y: p.y });
+            let reduced = true;
+            while (reduced && pts.length >= 2) {
+              reduced = false;
+              const n = pts.length;
+              const c = pts[n - 1], b = pts[n - 2];
+              if (Math.abs(c.x - b.x) < 1e-9 && Math.abs(c.y - b.y) < 1e-9) {
+                pts.splice(n - 1, 1);   // duplicate point
+                reduced = true;
+                continue;
+              }
+              if (n >= 3) {
+                const a = pts[n - 3];
+                const d1x = b.x - a.x, d1y = b.y - a.y, d2x = c.x - b.x, d2y = c.y - b.y;
+                const cross = d1x * d2y - d1y * d2x;
+                const dot = d1x * d2x + d1y * d2y;
+                if (Math.abs(cross) < 1e-12 && dot < 0) {
+                  pts.splice(n - 2, 1); // spike tip — path goes a→c directly
+                  reduced = true;
+                }
+              }
+            }
+          }
+          return pts;
+        };
+
+        // Merge adjacent profile runs whose height difference is below the cuttable
+        // minimum (these appear where an absorbed opening's bottom lands a hair away
+        // from a course line). Inner runs snap to the DEEPER neighbor; the first and
+        // last runs are corner anchors and never move.
+        const smoothRuns = (runsIn, minSeg) => {
+          let runs = runsIn.map(r => ({ ...r }));
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (let i = 0; i < runs.length - 1; i++) {
+              const a = runs[i], b = runs[i + 1];
+              const dy = Math.abs(a.y - b.y);
+              if (dy > 1e-9 && dy < minSeg) {
+                const aAnchor = i === 0, bAnchor = i + 1 === runs.length - 1;
+                if (aAnchor && bAnchor) continue;
+                const y = aAnchor ? a.y : bAnchor ? b.y : Math.max(a.y, b.y);
+                a.y = y; b.y = y;
+                changed = true;
+              }
+            }
+            const merged = [];
+            for (const r of runs) {
+              const prev = merged[merged.length - 1];
+              if (prev && Math.abs(prev.y - r.y) < 1e-9) prev.x1 = r.x1;
+              else merged.push({ ...r });
+            }
+            runs = merged;
+          }
+          return runs;
+        };
+
+        // Profile <-> horizontal-run conversions. A profile is strictly alternating
+        // horizontal/vertical segments, so it is fully described by its horizontal runs.
+        const profileToRuns = (pts) => {
+          const runs = [];
+          for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1], b = pts[i];
+            if (b.x > a.x + 1e-9) runs.push({ x0: a.x, x1: b.x, y: a.y });
+          }
+          return runs;
+        };
+        const runsToPts = (runs) => {
+          const pts = [{ x: runs[0].x0, y: runs[0].y }];
+          for (let i = 0; i < runs.length; i++) {
+            pts.push({ x: runs[i].x1, y: runs[i].y });
+            if (i + 1 < runs.length && Math.abs(runs[i + 1].y - runs[i].y) > 1e-9) {
+              pts.push({ x: runs[i].x1, y: runs[i + 1].y });
+            }
+          }
+          return pts;
+        };
+
+        // Lowest/highest break point over an x-range (used to classify openings)
+        const rangeMinMaxY = (runs, l, r) => {
+          let mn = Infinity, mx = -Infinity;
+          for (const run of runs) {
+            if (run.x1 <= l || run.x0 >= r) continue;
+            mn = Math.min(mn, run.y);
+            mx = Math.max(mx, run.y);
+          }
+          return { mn, mx };
+        };
+
+        // Absorb an opening into the break silhouette: within [l, r] the profile is
+        // pushed down to at least floorY (the opening's bottom), turning a half-destroyed
+        // window/door into a bite in the silhouette. Slivers shorter than minSeg are
+        // merged into the LOWER neighbor (removing material is always safe; adding it
+        // back could violate web rules).
+        const absorbIntoRuns = (runs, l, r, floorY, minSeg) => {
+          const out = [];
+          for (const run of runs) {
+            if (run.x1 <= l || run.x0 >= r || run.y >= floorY - 1e-9) { out.push({ ...run }); continue; }
+            if (run.x0 < l) out.push({ x0: run.x0, x1: l, y: run.y });
+            out.push({ x0: Math.max(run.x0, l), x1: Math.min(run.x1, r), y: floorY });
+            if (run.x1 > r) out.push({ x0: r, x1: run.x1, y: run.y });
+          }
+          const clean = [];
+          for (let i = 0; i < out.length; i++) {
+            const run = out[i];
+            const prev = clean[clean.length - 1];
+            // First/last runs are corner anchors — never merge them away, or the
+            // profile endpoint drifts off the shared corner height.
+            const isAnchor = i === 0 || i === out.length - 1;
+            if (!isAnchor && run.x1 - run.x0 < minSeg && (prev || i + 1 < out.length)) {
+              const next = out[i + 1];
+              if (prev && (!next || prev.y >= next.y)) { prev.x1 = run.x1; }
+              else if (next) { next.x0 = run.x0; }
+              continue;
+            }
+            if (prev && Math.abs(prev.y - run.y) < 1e-9) prev.x1 = run.x1;
+            else clean.push(run);
+          }
+          return clean;
+        };
+
+        // Jagged rectangular hole for breaches. Jitter is INWARD only (the hole edge
+        // never moves past the placement rect), so web margins guaranteed at placement
+        // time can never be violated by the jagging. Corners stay pinned.
+        const buildJaggedRect = (rng, l, t, r, b, courseH, runMin, runMax) => {
+          const w = r - l, h = b - t;
+          if (w < runMin * 1.5 || h < runMin * 1.5) {
+            return `M ${l} ${t} L ${r} ${t} L ${r} ${b} L ${l} ${b} Z`;
+          }
+          const maxOff = Math.min(2 * courseH, w / 4, h / 4);
+          const offsets = [0, Math.min(courseH, maxOff), Math.min(2 * courseH, maxOff)];
+          const breakpoints = (len) => {
+            const bps = [];
+            let x = 0;
+            while (x < len - runMin * 0.5) {
+              x += runMin + rng() * (runMax - runMin);
+              if (x > len - runMin * 0.5) x = len;
+              bps.push(x);
+            }
+            if (!bps.length || bps[bps.length - 1] < len) bps.push(len);
+            return bps;
+          };
+          const pts = [{ x: l, y: t }];
+          // Jags must stay clear of both corners of their edge by at least the maximum
+          // jag depth (+ margin). Otherwise this edge's inward jag and the ADJACENT
+          // edge's inward jag can cross near the corner, pinching off a loose
+          // "missing brick" of material diagonal to the hole corner.
+          const cornerClear = maxOff + RUIN_MIN_SEG;
+          const jaggedEdge = (sx, sy, dx, dy, len, inX, inY) => {
+            let off = 0;
+            const bps = breakpoints(len);
+            for (let i = 0; i < bps.length; i++) {
+              const p = bps[i];
+              pts.push({ x: sx + dx * p + inX * off, y: sy + dy * p + inY * off });
+              if (i >= bps.length - 1) break;
+              // The offset chosen here applies to the run [bps[i], bps[i+1]].
+              // Force 0 in the corner-clear zones and for the final run into the
+              // corner (so the path arrives traveling ALONG the edge — a hop at the
+              // corner itself would lie on the next edge's line and get retraced).
+              const inClearZone = p < cornerClear || bps[i + 1] > len - cornerClear;
+              const newOff = (i >= bps.length - 2 || inClearZone) ? 0 : offsets[Math.floor(rng() * offsets.length)];
+              if (Math.abs(newOff - off) > 1e-9) {
+                pts.push({ x: sx + dx * p + inX * newOff, y: sy + dy * p + inY * newOff });
+                off = newOff;
+              }
+            }
+          };
+          jaggedEdge(l, t, 1, 0, w, 0, 1);     // top edge, inward = down
+          jaggedEdge(r, t, 0, 1, h, -1, 0);    // right edge, inward = left
+          jaggedEdge(r, b, -1, 0, w, 0, -1);   // bottom edge, inward = up
+          jaggedEdge(l, b, 0, -1, h, 1, 0);    // left edge, inward = right
+          const clean = sanitizePts(pts);
+          if (clean.length > 1 && Math.abs(clean[0].x - clean[clean.length - 1].x) < 1e-9 && Math.abs(clean[0].y - clean[clean.length - 1].y) < 1e-9) {
+            clean.pop(); // Z closes back to the start; no duplicate point needed
+          }
+          return 'M ' + clean.map(p => `${p.x} ${p.y}`).join(' L ') + ' Z';
+        };
+
+
         const WALL_KEYS = ['front', 'back', 'left', 'right'];
         const WALL_LABELS = { front: 'Front', back: 'Back', left: 'Left', right: 'Right' };
 
@@ -116,6 +417,14 @@
           const [doorClearance, setDoorClearance] = useState(0.03);
           const [doorClearanceInput, setDoorClearanceInput] = useState('0.03');
 
+          // Ruins (v2.0) — wargaming scales only
+          const [condition, setCondition] = useState('intact');       // 'intact' | 'ruined'
+          const [damageLevel, setDamageLevel] = useState('medium');   // 'light' | 'medium' | 'heavy'
+          const [ruinSeed, setRuinSeed] = useState(1);
+          const [ruinSeedInput, setRuinSeedInput] = useState('1');
+          const [ruinStyles, setRuinStyles] = useState({ ...RUIN_DEFAULT_STYLES });
+          const [includeRuinRoof, setIncludeRuinRoof] = useState(false);
+
           // Gable windows — one per wall (only applies to walls currently gable-ended)
           const [gableWindows, setGableWindows] = useState({ front: false, back: false, left: false, right: false });
 
@@ -159,8 +468,10 @@
 
           // Display-only scales (trains, very small wargaming) don't need a second-story floor or
           // balcony — no miniatures going inside. Auto-reset to 'none' when scale becomes display-only.
+          // Ruins are a wargaming feature, so they reset too.
           useEffect(() => {
             if (SCALES[scale].displayOnly && secondFloorMode !== 'none') setSecondFloorMode('none');
+            if (SCALES[scale].displayOnly && condition !== 'intact') setCondition('intact');
           }, [scale]);
 
           // When ridge direction changes, clear gable-window flags on walls that are no longer gable.
@@ -206,6 +517,7 @@
 
           // Total wall height (includes all stories, no gable triangle)
           const wallBodyHeight = scaled.storyHeight * stories;
+          const totalWallH = wallBodyHeight; // alias used by the ruin plan / wall pieces (v2.0)
 
           // Gable peak height above eave = (ridgeSpan/2) * tan(pitch)
           const pitchRad = (roofPitch * Math.PI) / 180;
@@ -216,6 +528,12 @@
           // PATH PRIMITIVES (copied from 5-sided-box-designer-v2)
           // ====================================================
           const calculateTabCount = (edgeLength) => Math.max(1, Math.ceil(edgeLength / 2));
+
+          // Adaptive tab width (v2.0): short joinery segments get small tabs so there's
+          // still a shoulder on each side. Both pieces of a mating pair derive width from
+          // the SAME segment length, so tab/notch alignment is preserved automatically.
+          const tabWidthFor = (segmentLength) =>
+            segmentLength < TAB_BREAKPOINT ? TAB_WIDTH_SMALL : TAB_WIDTH_STD;
 
           const generateTabPositions = (edgeLength, numTabs, tabWidth) => {
             if (!tabWidth) tabWidth = 0.5;
@@ -324,41 +642,66 @@
               leftEdge,            // 'tabs' | 'notches' | 'plain'
               rightEdge,           // 'tabs' | 'notches' | 'plain'
               bottomEdge,          // 'tabs' | 'notches' | 'plain'
-              topEdge,             // { type: 'flat' } | { type: 'gable', peakHeight } | { type: 'eaveAngle', pitch }
+              topEdge,             // { type: 'flat' } | { type: 'gable', peakHeight } | { type: 'ruin', profile: [{x,y}...] }
               openings = [],       // [{leftX, bottomY, width, height}]  bottomY measured from panel bottom upward
             } = params;
 
-            const tabWidth = 0.5;
+            // Joinery heights (v2.0 ruins): corner tabs/notches occupy only the bottom
+            // `joinH` of each side edge. Both walls sharing a corner are given the same
+            // joinH (the corner's surviving height), so mating pairs always align and
+            // every standing corner keeps at least one locking tab. Defaults to full height.
+            const leftJoinH  = params.leftJoinH  != null ? params.leftJoinH  : panelHeight;
+            const rightJoinH = params.rightJoinH != null ? params.rightJoinH : panelHeight;
+
             const tabDepth = materialThickness;
+
+            // Tab positions for a side edge: re-spaced across the surviving segment,
+            // measured down from the panel top (offset = panelHeight - joinH).
+            const sideTabsFor = (joinH) => {
+              const tw = tabWidthFor(joinH);
+              const offset = panelHeight - joinH;
+              return generateTabPositions(joinH, calculateTabCount(joinH), tw)
+                .map(t => ({ start: t.start + offset, end: t.end + offset }));
+            };
 
             // --- Build outline ---
             let outline = '';
+            // Where the top edge meets each side edge (0 for full-height walls;
+            // lower for ruined break profiles that start at the surviving corner height)
+            const topLeftY  = topEdge.type === 'ruin' ? panelHeight - leftJoinH  : 0;
+            const topRightY = topEdge.type === 'ruin' ? panelHeight - rightJoinH : 0;
 
             // Top edge: varies by type
-            if (topEdge.type === 'flat') {
-              outline = `M 0 0 L ${wallLength} 0`;
-            } else if (topEdge.type === 'gable') {
+            if (topEdge.type === 'gable') {
               // Gable wall: top comes to a peak at the horizontal center, rising peakHeight above panel top
               const peak = topEdge.peakHeight;
               outline = `M 0 0 L ${wallLength / 2} ${-peak} L ${wallLength} 0`;
-            } else if (topEdge.type === 'eaveAngle') {
-              // Eave wall with angled top: for lift-off roof fit, the top edge stays flat
-              // (the ROOF is what's angled; wall top is the eave line). Keep flat for v1.
-              outline = `M 0 0 L ${wallLength} 0`;
+            } else if (topEdge.type === 'ruin') {
+              // Jagged break profile (already rectilinear, body coords, endpoints at the
+              // surviving corner heights). Produced by computeRuinPlan. Sanitized with the
+              // corner anchors included so no retrace can survive to the cut file.
+              const pts = sanitizePts([
+                { x: 0, y: topLeftY },
+                ...topEdge.profile,
+                { x: wallLength, y: topRightY },
+              ]);
+              outline = `M ${pts[0].x} ${pts[0].y}`;
+              for (let i = 1; i < pts.length; i++) {
+                outline += ` L ${pts[i].x} ${pts[i].y}`;
+              }
             } else {
+              // 'flat' / 'eaveAngle' (eave wall top stays flat — the ROOF carries the angle)
               outline = `M 0 0 L ${wallLength} 0`;
             }
 
-            // Right edge
-            const sideTabCount = calculateTabCount(panelHeight);
-            const sideTabs = generateTabPositions(panelHeight, sideTabCount, tabWidth);
-
+            // Right edge — tabs/notches only within the surviving joinery segment
+            const rightTabs = sideTabsFor(rightJoinH);
             if (rightEdge === 'tabs') {
-              sideTabs.forEach(t => {
+              rightTabs.forEach(t => {
                 outline += ` L ${wallLength} ${t.start} L ${wallLength + tabDepth} ${t.start} L ${wallLength + tabDepth} ${t.end} L ${wallLength} ${t.end}`;
               });
             } else if (rightEdge === 'notches') {
-              sideTabs.forEach(t => {
+              rightTabs.forEach(t => {
                 outline += ` L ${wallLength} ${t.start} L ${wallLength - tabDepth} ${t.start} L ${wallLength - tabDepth} ${t.end} L ${wallLength} ${t.end}`;
               });
             }
@@ -371,7 +714,7 @@
             const bottomDistr = params.bottomDistributeAcross || wallLength;
             const bottomXOffset = (bottomDistr - wallLength) / 2;
             const bottomTabCount = calculateTabCount(bottomDistr);
-            const bottomTabsRaw = generateTabPositions(bottomDistr, bottomTabCount, tabWidth);
+            const bottomTabsRaw = generateTabPositions(bottomDistr, bottomTabCount, tabWidthFor(bottomDistr));
             const bottomTabs = bottomTabsRaw.map(t => ({ start: t.start - bottomXOffset, end: t.end - bottomXOffset }));
 
             if (bottomEdge === 'tabs') {
@@ -387,19 +730,20 @@
             }
             outline += ` L 0 ${panelHeight}`;
 
-            // Left edge (going up)
+            // Left edge (going up) — same joinery-segment rule as the right edge
+            const leftTabs = sideTabsFor(leftJoinH);
             if (leftEdge === 'tabs') {
-              for (let i = sideTabs.length - 1; i >= 0; i--) {
-                const t = sideTabs[i];
+              for (let i = leftTabs.length - 1; i >= 0; i--) {
+                const t = leftTabs[i];
                 outline += ` L 0 ${t.end} L ${-tabDepth} ${t.end} L ${-tabDepth} ${t.start} L 0 ${t.start}`;
               }
             } else if (leftEdge === 'notches') {
-              for (let i = sideTabs.length - 1; i >= 0; i--) {
-                const t = sideTabs[i];
+              for (let i = leftTabs.length - 1; i >= 0; i--) {
+                const t = leftTabs[i];
                 outline += ` L 0 ${t.end} L ${tabDepth} ${t.end} L ${tabDepth} ${t.start} L 0 ${t.start}`;
               }
             }
-            outline += ` L 0 0 Z`;
+            outline += ` L 0 ${topLeftY} Z`;
 
             // --- Add openings as separate sub-paths ---
             // Windows are subdivided into 4 separate pane cuts so the mullion cross stays as
@@ -460,13 +804,14 @@
 
           // Floor panel with notches on all edges to receive wall tabs
           const generateFloorPath = (width, depth, widthTabs, depthTabs) => {
-            const tabWidth = 0.5;
             const tabDepth = materialThickness;
 
-            const topNotches = generateTabPositions(width, widthTabs, tabWidth);
-            const rightNotches = generateTabPositions(depth, depthTabs, tabWidth);
-            const bottomNotches = generateTabPositions(width, widthTabs, tabWidth);
-            const leftNotches = generateTabPositions(depth, depthTabs, tabWidth);
+            // Tab width derived from the same dimension the mating wall uses, so the
+            // adaptive-width rule can never desynchronize notches from wall tabs.
+            const topNotches = generateTabPositions(width, widthTabs, tabWidthFor(width));
+            const rightNotches = generateTabPositions(depth, depthTabs, tabWidthFor(depth));
+            const bottomNotches = generateTabPositions(width, widthTabs, tabWidthFor(width));
+            const leftNotches = generateTabPositions(depth, depthTabs, tabWidthFor(depth));
 
             let path = `M 0 0`;
             topNotches.forEach(n => {
@@ -498,16 +843,16 @@
           //   balconyWidth     — visible ring ledge width inside the body
           //   widthTabs, depthTabs — number of tabs along each axis
           const generateBalconyRingPaths = (extW, extD, balconyWidth, widthTabs, depthTabs) => {
-            const tabWidth = 0.5;
             const T = materialThickness;
             const bodyW = extW - 2 * T;
             const bodyD = extD - 2 * T;
             const innerW = Math.max(0.25, bodyW - 2 * balconyWidth);
             const innerD = Math.max(0.25, bodyD - 2 * balconyWidth);
 
-            // Tabs distributed across the EXTERIOR dimension (matches wall slot positions)
-            const widthTabPos = generateTabPositions(extW, widthTabs, tabWidth);
-            const depthTabPos = generateTabPositions(extD, depthTabs, tabWidth);
+            // Tabs distributed across the EXTERIOR dimension (matches wall slot positions);
+            // width follows the same adaptive rule as the wall slots
+            const widthTabPos = generateTabPositions(extW, widthTabs, tabWidthFor(extW));
+            const depthTabPos = generateTabPositions(extD, depthTabs, tabWidthFor(extD));
 
             const bL = T, bT = T;                  // body top-left corner
             const bR = T + bodyW, bB = T + bodyD;  // body bottom-right corner
@@ -607,7 +952,7 @@
             // 2 * materialThickness below the 1st-story panel top edge
             const slotBottomY = scaled.storyHeight - 2 * materialThickness;
             const tabCount = calculateTabCount(wallLengthExterior);
-            const tabPositions = generateTabPositions(wallLengthExterior, tabCount, 0.5);
+            const tabPositions = generateTabPositions(wallLengthExterior, tabCount, tabWidthFor(wallLengthExterior));
             return tabPositions.map(tp => ({
               type: 'slot',
               leftX: tp.start,
@@ -657,6 +1002,214 @@
           };
 
           // ====================================================
+          // RUIN PLAN (v2.0) — computed once per state change, consumed by BOTH
+          // the SVG generator and the preview so they can never disagree.
+          // All wall geometry in the plan is in BODY coordinates (the same frame
+          // generateWallPanelPath uses), y measured down from the panel top.
+          // ====================================================
+          const ruinPlan = useMemo(() => {
+            if (condition !== 'ruined' || SCALES[scale].displayOnly) return null;
+
+            const P = DAMAGE_PARAMS[damageLevel];
+            const sf = (ft) => (ft * 12) / SCALES[scale].ratio;
+            const minWeb = Math.max(0.08, materialThickness);
+            const bottomStub = Math.max(3 * materialThickness, 0.3);
+            const courseH = Math.max(sf(RUIN_COURSE_FT), RUIN_MIN_SEG * 1.5);
+            const runMin = Math.max(sf(RUIN_RUN_MIN_FT), 3 * RUIN_MIN_SEG);
+            const runMax = Math.max(sf(RUIN_RUN_MAX_FT), runMin * 2);
+            const ridgeAlongWidth = ridgeDirection === 'width';
+            const isGableW = (wk) => ridgeAlongWidth
+              ? (wk === 'left' || wk === 'right')
+              : (wk === 'front' || wk === 'back');
+            const wallIndex = { front: 0, back: 1, left: 2, right: 3 };
+            const warnings = [];
+
+            // ---- Phase 1: shared corner heights (corner-first rule) ----
+            // Each wall states a desired height at each of its two corners; the corner
+            // takes the MINIMUM of its two walls' desires, clamped to the stub minimum.
+            const desire = {};
+            for (const wk of WALL_KEYS) {
+              const rng = mulberry32(((ruinSeed * 4 + wallIndex[wk]) ^ 0x9E3779B9) >>> 0);
+              const st = ruinStyles[wk];
+              const rb = (band) => (band[0] + rng() * (band[1] - band[0])) * totalWallH;
+              if (st === 'collapsed') {
+                desire[wk] = { left: rb(P.cornerBand), right: rb(P.cornerBand) };
+              } else if (st === 'corner') {
+                const blowLeft = rng() < 0.5;
+                desire[wk] = blowLeft
+                  ? { left: rb(P.blownBand), right: rb(P.keptBand) }
+                  : { left: rb(P.keptBand), right: rb(P.blownBand) };
+              } else {
+                desire[wk] = { left: totalWallH, right: totalWallH };
+              }
+            }
+            const cornerH = {};
+            // Ruined corner heights snap to the masonry course grid so break-profile
+            // endpoints land on whole courses (no sub-minimum slivers at the corners).
+            const minCornerGrid = Math.ceil(RUIN_MIN_CORNER / courseH) * courseH;
+            const maxCornerGrid = Math.floor(totalWallH / courseH) * courseH;
+            for (const c of CORNER_KEYS) {
+              let h = totalWallH;
+              for (const wk of WALL_KEYS) {
+                for (const side of ['left', 'right']) {
+                  if (WALL_CORNERS[wk][side] === c) h = Math.min(h, desire[wk][side]);
+                }
+              }
+              if (h >= totalWallH - 1e-9) {
+                cornerH[c] = totalWallH; // untouched corner — keep exact full height
+              } else {
+                const q = Math.round(h / courseH) * courseH;
+                cornerH[c] = Math.min(maxCornerGrid, Math.max(minCornerGrid, q));
+              }
+            }
+
+            // ---- Phase 2: per-wall break profiles and breaches ----
+            // Balcony slot band (panel coords) for the slot-survival check
+            const slotTopY = totalWallH - ((scaled.storyHeight - 2 * materialThickness) + materialThickness);
+            const balconyRequested = stories === 2 && secondFloorMode === 'balcony';
+            let balconyOK = balconyRequested;
+
+            const walls = {};
+            for (const wk of WALL_KEYS) {
+              const st = ruinStyles[wk];
+              const isGable = isGableW(wk);
+              const isWidthWall = wk === 'front' || wk === 'back';
+              const wallLength = isWidthWall ? scaled.footprintWidth : scaled.footprintDepth;
+              const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
+              const openingShift = isGable ? 0 : materialThickness;
+              const leftJoinH = cornerH[WALL_CORNERS[wk].left];
+              const rightJoinH = cornerH[WALL_CORNERS[wk].right];
+
+              // User openings (all stories) in body coords
+              let openings = [];
+              for (let s = 1; s <= stories; s++) {
+                const layout = computeWallLayout(wallLength, s, wallConfig[s][wk]);
+                for (const op of layout.openings) {
+                  openings.push({ ...op, leftX: op.leftX - openingShift });
+                }
+              }
+              // Gable window survives only on walls whose style keeps the peak
+              const keepsTop = st === 'intact' || st === 'breach';
+              if (isGable && gableWindows[wk]) {
+                const gw = computeGableWindow(wk, wallLength, bodyLength, scaled.storyHeight);
+                if (gw.fits) {
+                  if (keepsTop) {
+                    openings.push({
+                      ...gw.opening,
+                      leftX: gw.opening.leftX - openingShift,
+                      bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
+                    });
+                  } else {
+                    warnings.push(`${WALL_LABELS[wk]} wall: gable window removed — the ${RUIN_STYLE_LABELS[st].toLowerCase()} ruin takes the peak with it.`);
+                  }
+                }
+              }
+
+              let profile = null;
+              const holePaths = [];
+              let slotSafe = st === 'intact';
+              const rng = mulberry32((ruinSeed * 1013 + wallIndex[wk] * 101 + 7) >>> 0);
+
+              if (st === 'collapsed' || st === 'corner') {
+                const raw = buildBreakProfile(
+                  rng, bodyLength,
+                  totalWallH - leftJoinH, totalWallH - rightJoinH,
+                  totalWallH, P.sag, courseH, runMin, runMax,
+                  totalWallH - bottomStub
+                );
+                let runs = profileToRuns(raw);
+                // Classify each opening against the break: keep / drop / absorb
+                const kept = [];
+                for (const op of openings) {
+                  const opTop = totalWallH - op.bottomY - op.height;
+                  const opBottom = totalWallH - op.bottomY;
+                  const { mn, mx } = rangeMinMaxY(runs, op.leftX, op.leftX + op.width);
+                  if (mx <= opTop - minWeb) { kept.push(op); continue; }       // fully below break, good web
+                  if (mn >= opBottom - 1e-9) continue;                          // fully in the rubble — dropped
+                  runs = absorbIntoRuns(runs, op.leftX, op.leftX + op.width, opBottom, RUIN_MIN_SEG);
+                }
+                openings = kept;
+                runs = smoothRuns(runs, RUIN_MIN_SEG);
+                profile = sanitizePts(runsToPts(runs));
+                // Slots survive only if the whole break stays above the slot band with web
+                const whole = rangeMinMaxY(runs, 0, bodyLength);
+                slotSafe = whole.mx <= slotTopY - minWeb;
+              } else if (st === 'breach') {
+                const edgeMargin = Math.max(2 * minWeb, 2 * materialThickness, 0.15);
+                const topMargin = minWeb + courseH;
+                const bw = Math.min((P.breachW[0] + rng() * (P.breachW[1] - P.breachW[0])) * bodyLength,
+                                    bodyLength - 2 * edgeMargin);
+                const bh = (P.breachH[0] + rng() * (P.breachH[1] - P.breachH[0])) * scaled.storyHeight;
+                if (bw > 0.3 && bh > 0.3) {
+                  const cx = bodyLength * (0.35 + rng() * 0.3);
+                  let rect = {
+                    l: Math.max(edgeMargin, cx - bw / 2),
+                    r: Math.min(bodyLength - edgeMargin, cx + bw / 2),
+                    b: Math.min(totalWallH - bottomStub, totalWallH - bottomStub - rng() * 0.15 * scaled.storyHeight),
+                  };
+                  rect.t = Math.max(topMargin, rect.b - bh);
+                  // Absorb any opening the breach touches (or comes within a web of)
+                  let changed = true;
+                  while (changed) {
+                    changed = false;
+                    openings = openings.filter(op => {
+                      const opTop = totalWallH - op.bottomY - op.height;
+                      const opBottom = totalWallH - op.bottomY;
+                      const apart = op.leftX > rect.r + minWeb || op.leftX + op.width < rect.l - minWeb ||
+                                    opTop > rect.b + minWeb || opBottom < rect.t - minWeb;
+                      if (apart) return true;
+                      rect.l = Math.max(edgeMargin, Math.min(rect.l, op.leftX));
+                      rect.r = Math.min(bodyLength - edgeMargin, Math.max(rect.r, op.leftX + op.width));
+                      rect.t = Math.max(topMargin, Math.min(rect.t, opTop));
+                      rect.b = Math.max(rect.b, opBottom);   // may reach a door's base strip
+                      changed = true;
+                      return false;
+                    });
+                  }
+                  holePaths.push(buildJaggedRect(rng, rect.l, rect.t, rect.r, rect.b, courseH, runMin, runMax));
+                  // Slots survive if the breach (plus a web margin) stays clear of the slot band
+                  const bandTop = slotTopY, bandBottom = slotTopY + materialThickness;
+                  slotSafe = (rect.b + minWeb < bandTop) || (rect.t - minWeb > bandBottom);
+                } else {
+                  slotSafe = true; // breach too small to cut — wall is effectively intact
+                }
+              }
+
+              if (!slotSafe) balconyOK = false;
+              walls[wk] = {
+                style: st, profile, holePaths,
+                leftJoinH, rightJoinH,
+                survivingOpenings: openings,
+              };
+            }
+
+            // ---- Phase 3: balcony slots (only if every wall passed the slot check) ----
+            if (balconyRequested && balconyOK) {
+              for (const wk of WALL_KEYS) {
+                const isGable = isGableW(wk);
+                const isWidthWall = wk === 'front' || wk === 'back';
+                const wallLength = isWidthWall ? scaled.footprintWidth : scaled.footprintDepth;
+                const openingShift = isGable ? 0 : materialThickness;
+                for (const sl of computeBalconySlots(wk, wallLength)) {
+                  walls[wk].survivingOpenings.push({ ...sl, leftX: sl.leftX - openingShift });
+                }
+              }
+            }
+            if (balconyRequested && !balconyOK) {
+              warnings.push('Balcony ring disabled — every wall must still be standing at the slot line for the ring to plug in.');
+            }
+
+            const roofEligible = WALL_KEYS.filter(isGableW).every(wk => ruinStyles[wk] === 'intact');
+
+            return { walls, cornerH, balconyOK, balconyRequested, roofEligible, warnings };
+          }, [condition, scale, damageLevel, ruinSeed, ruinStyles, scaled, stories, wallConfig,
+              secondFloorMode, gableWindows, ridgeDirection, materialThickness, totalWallH, gablePeakCut]);
+
+          // Roof / balcony presence for the whole tool (SVG, preview, bed check)
+          const roofIncluded = condition === 'intact' || (ruinPlan && ruinPlan.roofEligible && includeRuinRoof);
+          const balconyActive = stories === 2 && secondFloorMode === 'balcony' && (!ruinPlan || ruinPlan.balconyOK);
+
+          // ====================================================
           // WALL LAYOUT (all 4 walls, per story) — used for both SVG and preview
           // ====================================================
           const buildAllWallLayouts = () => {
@@ -703,6 +1256,94 @@
             return result;
           };
 
+          // ====================================================
+          // WALL PIECES (v2.0) — single source of truth for the four wall panels,
+          // consumed by BOTH generateSVG and the preview. Applies the ruin plan
+          // when the building is ruined; reproduces v1.1 assembly when intact.
+          // ====================================================
+          const buildWallPieces = () => {
+            const wallLayouts = buildAllWallLayouts();
+            const pieces = [];
+            for (const wallKey of WALL_KEYS) {
+              const { wallLength, isGable, perStory } = wallLayouts[wallKey];
+              const panelHeight = totalWallH;
+              // Gable-notch rule: gable walls notched (body = exterior), eave walls tabbed (body = interior)
+              const leftEdge = isGable ? 'notches' : 'tabs';
+              const rightEdge = isGable ? 'notches' : 'tabs';
+              const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
+              const openingShift = isGable ? 0 : materialThickness;
+              const bottomEdge = includeFloor ? 'tabs' : 'plain';
+              const wp = ruinPlan ? ruinPlan.walls[wallKey] : null;
+
+              let openings, extraHolePaths, topEdge, leftJoinH, rightJoinH;
+              if (wp) {
+                openings = wp.survivingOpenings;
+                extraHolePaths = wp.holePaths;
+                topEdge = wp.profile
+                  ? { type: 'ruin', profile: wp.profile }
+                  : (isGable ? { type: 'gable', peakHeight: gablePeakCut } : { type: 'flat' });
+                leftJoinH = wp.leftJoinH;
+                rightJoinH = wp.rightJoinH;
+              } else {
+                // Intact building — identical to v1.1 assembly
+                openings = [];
+                extraHolePaths = [];
+                for (const s of perStory) {
+                  for (const op of s.layout.openings) {
+                    openings.push({ type: op.type, leftX: op.leftX - openingShift, bottomY: op.bottomY, width: op.width, height: op.height });
+                  }
+                }
+                if (stories === 2 && secondFloorMode === 'balcony') {
+                  for (const sl of computeBalconySlots(wallKey, wallLength)) {
+                    openings.push({ type: 'slot', leftX: sl.leftX - openingShift, bottomY: sl.bottomY, width: sl.width, height: sl.height });
+                  }
+                }
+                if (isGable) {
+                  const gw = computeGableWindow(wallKey, wallLength, bodyLength, scaled.storyHeight);
+                  if (gw.fits) {
+                    openings.push({
+                      type: 'gable-window',
+                      leftX: gw.opening.leftX - openingShift,
+                      bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
+                      width: gw.opening.width,
+                      height: gw.opening.height,
+                    });
+                  }
+                }
+                topEdge = isGable ? { type: 'gable', peakHeight: gablePeakCut } : { type: 'flat' };
+              }
+
+              const { outline, openingPaths } = generateWallPanelPath({
+                wallLength: bodyLength,
+                panelHeight,
+                leftEdge, rightEdge, bottomEdge,
+                topEdge,
+                openings,
+                bottomDistributeAcross: wallLength,
+                leftJoinH, rightJoinH,
+              });
+
+              const bboxExtraLeft = (leftEdge === 'tabs') ? materialThickness : 0;
+              const bboxExtraRight = (rightEdge === 'tabs') ? materialThickness : 0;
+              const bboxExtraTop = (topEdge.type === 'gable') ? gablePeakCut : 0;
+              const bboxExtraBottom = (bottomEdge === 'tabs') ? materialThickness : 0;
+
+              pieces.push({
+                name: `${wallKey}-wall`,
+                wallKey,
+                label: WALL_LABELS[wallKey],
+                outline,
+                openingPaths: [...openingPaths, ...extraHolePaths],
+                bodyLength,
+                bboxW: bodyLength + bboxExtraLeft + bboxExtraRight,
+                bboxH: panelHeight + bboxExtraTop + bboxExtraBottom,
+                offsetX: bboxExtraLeft,
+                offsetY: bboxExtraTop,
+              });
+            }
+            return pieces;
+          };
+
           const validation = useMemo(() => {
             const warnings = [];
             const ridgeAlongWidth = ridgeDirection === 'width';
@@ -732,8 +1373,10 @@
                 }
               }
             }
+            // Ruin-plan warnings (v2.0): dropped gable windows, disabled balcony
+            if (ruinPlan) warnings.push(...ruinPlan.warnings);
             return warnings;
-          }, [scale, footprintWidthFt, footprintDepthFt, stories, wallConfig, scaled, gableWindows, ridgeDirection, roofPitch, gablePeakCut, materialThickness]);
+          }, [scale, footprintWidthFt, footprintDepthFt, stories, wallConfig, scaled, gableWindows, ridgeDirection, roofPitch, gablePeakCut, materialThickness, ruinPlan]);
 
           // ====================================================
           // SVG GENERATION (laser bed layout)
@@ -752,100 +1395,10 @@
             // Panel height = storyHeight (for 1-story eave walls: panelHeight = storyHeight; gable walls include peak on top)
             // For 2-story: each story gets its own panel; peak only on TOP story's gable wall.
 
-            const allPanels = []; // {name, pathOutline, openingPaths, bboxW, bboxH}
-
-            // Ground-floor presence drives whether walls have bottom tabs.
-            // The balcony ring mates via interior slots, not bottom tabs, so it's independent.
-            const hasAnyFloor = includeFloor;
-
-            // Each wall is ONE panel spanning all stories (full height, with gable peak on top
-            // if applicable). Matches the preview output.
-            const totalWallH = scaled.storyHeight * stories;
-            for (const wallKey of WALL_KEYS) {
-              const { wallLength, isGable, perStory } = wallLayouts[wallKey];
-              const panelHeight = totalWallH;
-              const topEdge = isGable
-                ? { type: 'gable', peakHeight: gablePeakCut }
-                : { type: 'flat' };
-
-              // Corner convention driven by gable-ness, not by width/depth:
-              //   Gable walls: NOTCHES inward, body = full exterior — so the triangular
-              //     peak's base runs corner-to-corner and the roof slope sits flush.
-              //   Eave walls:  TABS outward, body = interior — tabs slot into the gable walls.
-              // This means flipping ridge direction also flips which walls are tabbed vs notched.
-              const isWidthWall = wallKey === 'front' || wallKey === 'back';
-              const leftEdge  = isGable ? 'notches' : 'tabs';
-              const rightEdge = isGable ? 'notches' : 'tabs';
-              const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
-
-              const bottomEdge = hasAnyFloor ? 'tabs' : 'plain';
-              const openingShift = isGable ? 0 : materialThickness;
-
-              // Collect all openings across all stories (bottomY already in full-wall frame
-              // since computeWallLayout uses storyOffset).
-              const userOpenings = [];
-              for (const s of perStory) {
-                for (const op of s.layout.openings) {
-                  userOpenings.push({
-                    type: op.type, // 'window' | 'door' — preserved so the wall path can subdivide windows into panes
-                    leftX: op.leftX - openingShift,
-                    bottomY: op.bottomY,
-                    width: op.width,
-                    height: op.height,
-                  });
-                }
-              }
-
-              // Balcony slots (2-story balcony mode): in the 1st-story portion near its top.
-              const balconySlots = (stories === 2 && secondFloorMode === 'balcony')
-                ? computeBalconySlots(wallKey, wallLength).map(sl => ({
-                    type: 'slot',
-                    leftX: sl.leftX - openingShift,
-                    bottomY: sl.bottomY,
-                    width: sl.width,
-                    height: sl.height,
-                  }))
-                : [];
-
-              // Gable window (only on gable walls, in the peak area above the top story).
-              const gw = isGable ? computeGableWindow(wallKey, wallLength, bodyLength, scaled.storyHeight) : { fits: false, opening: null };
-              const gableWindowOpenings = gw.fits
-                ? [{
-                    type: 'gable-window',
-                    leftX: gw.opening.leftX - openingShift,
-                    bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
-                    width: gw.opening.width,
-                    height: gw.opening.height,
-                  }]
-                : [];
-
-              const openings = [...userOpenings, ...balconySlots, ...gableWindowOpenings];
-
-              const { outline, openingPaths } = generateWallPanelPath({
-                wallLength: bodyLength,
-                panelHeight,
-                leftEdge, rightEdge, bottomEdge,
-                topEdge,
-                openings,
-                // Always distribute bottom tabs across exterior so they match floor notches
-                bottomDistributeAcross: wallLength,
-              });
-
-              const bboxExtraLeft  = (leftEdge  === 'tabs') ? materialThickness : 0;
-              const bboxExtraRight = (rightEdge === 'tabs') ? materialThickness : 0;
-              const bboxWidth = bodyLength + bboxExtraLeft + bboxExtraRight;
-              const bboxExtraTop    = (topEdge.type === 'gable') ? gablePeakCut : 0;
-              const bboxExtraBottom = (bottomEdge === 'tabs') ? materialThickness : 0;
-              const bboxHeight = panelHeight + bboxExtraTop + bboxExtraBottom;
-
-              allPanels.push({
-                name: `${wallKey}-wall`,
-                label: WALL_LABELS[wallKey],
-                outline, openingPaths,
-                bboxW: bboxWidth, bboxH: bboxHeight,
-                offsetX: bboxExtraLeft, offsetY: bboxExtraTop,
-              });
-            }
+            // Each wall is ONE panel spanning all stories. Built by the shared
+            // buildWallPieces() (also feeds the preview), which applies the ruin plan
+            // when the building is ruined and reproduces v1.1 assembly when intact.
+            const allPanels = buildWallPieces();
 
             // Roof slopes — two rectangles, with overhang on all three exposed edges
             // (both gable ends along the ridge + the eave side of each slope). The ridge
@@ -869,30 +1422,44 @@
               floorPath = generateFloorPath(extW, extD, calculateTabCount(extW), calculateTabCount(extD));
             }
             let balconyPaths = null;
-            if (stories === 2 && secondFloorMode === 'balcony') {
+            if (balconyActive) {
               balconyPaths = generateBalconyRingPaths(extW, extD, balconyWidth, calculateTabCount(extW), calculateTabCount(extD));
             }
 
             // Collect trim pieces — one per unique opening across all walls.
             // Window panes are cut directly into the wall (mullion = solid wall material),
             // so only the front trim is generated as a separate piece.
+            // Ruined buildings (v2.0): only openings that SURVIVED intact get trim/door
+            // pieces — battle-damaged openings are part of the broken silhouette.
             const windowTrims = [];
             const doorPieces = [];
-            for (const wallKey of WALL_KEYS) {
-              const { wallLength, perStory } = wallLayouts[wallKey];
-              // Top-story bodyLength (needed for gable window fit check)
-              const isWidthWall = wallKey === 'front' || wallKey === 'back';
-              const bodyLenTop = isWidthWall ? wallLength - 2 * materialThickness : wallLength;
-              const gwCheck = computeGableWindow(wallKey, wallLength, bodyLenTop, scaled.storyHeight);
-              if (gwCheck.fits) {
-                windowTrims.push({ w: gwCheck.opening.width, h: gwCheck.opening.height });
-              }
-              for (const s of perStory) {
-                for (const op of s.layout.openings) {
-                  if (op.type === 'window') {
+            if (ruinPlan) {
+              for (const wallKey of WALL_KEYS) {
+                for (const op of ruinPlan.walls[wallKey].survivingOpenings) {
+                  if (op.type === 'window' || op.type === 'gable-window') {
                     windowTrims.push({ w: op.width, h: op.height });
                   } else if (op.type === 'door') {
                     doorPieces.push({ w: op.width, h: op.height });
+                  }
+                }
+              }
+            } else {
+              for (const wallKey of WALL_KEYS) {
+                const { wallLength, perStory } = wallLayouts[wallKey];
+                // Top-story bodyLength (needed for gable window fit check)
+                const isWidthWall = wallKey === 'front' || wallKey === 'back';
+                const bodyLenTop = isWidthWall ? wallLength - 2 * materialThickness : wallLength;
+                const gwCheck = computeGableWindow(wallKey, wallLength, bodyLenTop, scaled.storyHeight);
+                if (gwCheck.fits) {
+                  windowTrims.push({ w: gwCheck.opening.width, h: gwCheck.opening.height });
+                }
+                for (const s of perStory) {
+                  for (const op of s.layout.openings) {
+                    if (op.type === 'window') {
+                      windowTrims.push({ w: op.width, h: op.height });
+                    } else if (op.type === 'door') {
+                      doorPieces.push({ w: op.width, h: op.height });
+                    }
                   }
                 }
               }
@@ -919,24 +1486,27 @@
             const row1Width = x - spacing;
             currentY += rowMaxH + spacing;
 
-            // Row 2: roof + floor
+            // Row 2: roof + floor. Ruined buildings (v2.0) only get roof pieces when both
+            // gable walls are intact AND the user asked to include the roof.
             let row2 = [];
             x = 0;
             rowMaxH = 0;
-            // Roof slope 1
-            row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 1' });
-            x += ridgeLength + spacing;
-            rowMaxH = Math.max(rowMaxH, slopeWidth);
-            // Roof slope 2
-            row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 2' });
-            x += ridgeLength + spacing;
-            // Ridge cap — thin rectangle sized ridgeLength × materialThickness.
-            // Glued between the two roof slopes at the apex to fill the angular gap and
-            // give the peak a crisp line.
-            const ridgeCapPath = `M 0 0 L ${ridgeLength} 0 L ${ridgeLength} ${materialThickness} L 0 ${materialThickness} Z`;
-            row2.push({ type: 'ridge-cap', path: ridgeCapPath, w: ridgeLength, h: materialThickness, x, y: currentY, label: 'Ridge' });
-            x += ridgeLength + spacing;
-            rowMaxH = Math.max(rowMaxH, materialThickness);
+            if (roofIncluded) {
+              // Roof slope 1
+              row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 1' });
+              x += ridgeLength + spacing;
+              rowMaxH = Math.max(rowMaxH, slopeWidth);
+              // Roof slope 2
+              row2.push({ type: 'roof', path: roofSlopePath, w: ridgeLength, h: slopeWidth, x, y: currentY, label: 'Roof 2' });
+              x += ridgeLength + spacing;
+              // Ridge cap — thin rectangle sized ridgeLength × materialThickness.
+              // Glued between the two roof slopes at the apex to fill the angular gap and
+              // give the peak a crisp line.
+              const ridgeCapPath = `M 0 0 L ${ridgeLength} 0 L ${ridgeLength} ${materialThickness} L 0 ${materialThickness} Z`;
+              row2.push({ type: 'ridge-cap', path: ridgeCapPath, w: ridgeLength, h: materialThickness, x, y: currentY, label: 'Ridge' });
+              x += ridgeLength + spacing;
+              rowMaxH = Math.max(rowMaxH, materialThickness);
+            }
             if (floorPath) {
               row2.push({ type: 'floor', path: floorPath, w: extW, h: extD, x, y: currentY, label: 'Floor' });
               x += extW + spacing;
@@ -987,8 +1557,11 @@
             const svgH = convertFromInches(totalHeight);
 
             let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-            svg += `<!-- Generated by Scale Model Building Designer v1.1.0 - https://greylightmay.com -->\n`;
+            svg += `<!-- Generated by Scale Model Building Designer v2.0.0 - https://greylightmay.com -->\n`;
             svg += `<!-- Scale: ${SCALES[scale].label} | Footprint: ${footprintWidthFt}x${footprintDepthFt} ft | Stories: ${stories} -->\n`;
+            if (ruinPlan) {
+              svg += `<!-- Ruined: ${damageLevel} damage, seed ${ruinSeed} | Walls: ${WALL_KEYS.map(wk => `${wk}=${ruinStyles[wk]}`).join(' ')} -->\n`;
+            }
             svg += `<svg width="${svgW}${units === 'mm' ? 'mm' : 'in'}" height="${svgH}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
             svg += `  <defs><style>.cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }</style></defs>\n`;
 
@@ -1033,7 +1606,8 @@
 
             svg += `</svg>`;
             return { svg, totalWidth, totalHeight, layout: { wallsRow, row2, row3, row4 } };
-          }, [scale, footprintWidthFt, footprintDepthFt, stories, roofPitch, ridgeDirection, includeFloor, secondFloorMode, balconyWidth, wallConfig, gableWindows, doorClearance, materialThickness, units, scaled, gablePeakCut, pitchRad]);
+          }, [scale, footprintWidthFt, footprintDepthFt, stories, roofPitch, ridgeDirection, includeFloor, secondFloorMode, balconyWidth, wallConfig, gableWindows, doorClearance, materialThickness, units, scaled, gablePeakCut, pitchRad,
+              condition, damageLevel, ruinSeed, ruinStyles, ruinPlan, includeRuinRoof]);
 
           // ====================================================
           // BED FIT CHECK
@@ -1064,7 +1638,8 @@
             const link = document.createElement('a');
             link.href = url;
             const safe = filename.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-') || 'building';
-            link.download = `${safe}-${scale}-${footprintWidthFt}x${footprintDepthFt}ft-${stories}story.svg`;
+            const ruinTag = condition === 'ruined' ? `-ruined-s${ruinSeed}` : '';
+            link.download = `${safe}-${scale}-${footprintWidthFt}x${footprintDepthFt}ft-${stories}story${ruinTag}.svg`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -1109,16 +1684,31 @@
             if (!isNaN(v) && v >= 0) setDoorClearance(convertToInches(v));
           };
 
+          const handleRuinSeedChange = (value) => {
+            const v = parseInt(value, 10);
+            if (!isNaN(v) && v >= 0) setRuinSeed(v);
+          };
+
+          const rerollRuins = () => {
+            const next = ruinSeed + 1;
+            setRuinSeed(next);
+            setRuinSeedInput(String(next));
+          };
+
           // ====================================================
           // RENDER
           // ====================================================
-          const wallLayoutsForPreview = buildAllWallLayouts();
+          const wallPiecesForPreview = buildWallPieces();
+
+          // Dev/test hook: lets automated checks read the ruin plan and the exact
+          // piece paths without parsing the preview DOM. No effect on the UI.
+          window.__smbDebug = { ruinPlan, wallPieces: wallPiecesForPreview, totalWallH, materialThickness, scale, stories };
 
           return (
             <div className="max-w-7xl mx-auto p-6 bg-white">
               <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Scale Model Building Designer</h1>
-              <p className="text-center text-gray-600 mb-1">Wargaming terrain and model railroad buildings with lift-off gable roofs</p>
-              <p className="text-center text-gray-500 text-sm mb-8">v1.1.0</p>
+              <p className="text-center text-gray-600 mb-1">Wargaming terrain and model railroad buildings with lift-off gable roofs — now with ruined variants</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v2.0.0</p>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Settings Column */}
@@ -1164,6 +1754,68 @@
                     </div>
                   </div>
 
+                  {/* Condition (v2.0 ruins) — wargaming scales only */}
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Condition</h2>
+                    {SCALES[scale].displayOnly ? (
+                      <p className="text-sm text-gray-600">
+                        Ruined buildings are a wargaming feature — available at 32mm, 28mm, and 15mm scales.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex gap-4 mb-1">
+                          <label className="flex items-center cursor-pointer"><input type="radio" checked={condition === 'intact'} onChange={() => setCondition('intact')} className="mr-2" /><span>Intact</span></label>
+                          <label className="flex items-center cursor-pointer"><input type="radio" checked={condition === 'ruined'} onChange={() => setCondition('ruined')} className="mr-2" /><span>Ruined</span></label>
+                        </div>
+                        {condition === 'ruined' && (
+                          <div className="mt-3 pt-3 border-t border-gray-200 space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 mb-1">Damage level</label>
+                              <select value={damageLevel} onChange={e => setDamageLevel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded">
+                                <option value="light">Light</option>
+                                <option value="medium">Medium</option>
+                                <option value="heavy">Heavy</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 mb-1">Ruin style per wall</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                {WALL_KEYS.map(wk => (
+                                  <div key={wk} className="bg-white p-2 rounded border border-gray-200">
+                                    <label className="block text-xs text-gray-600 mb-1">{WALL_LABELS[wk]}</label>
+                                    <select
+                                      value={ruinStyles[wk]}
+                                      onChange={e => setRuinStyles(prev => ({ ...prev, [wk]: e.target.value }))}
+                                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                                    >
+                                      {Object.entries(RUIN_STYLE_LABELS).map(([k, label]) => (
+                                        <option key={k} value={k}>{label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 mb-1">Variant</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number" min="0" step="1" value={ruinSeedInput}
+                                  onChange={e => { setRuinSeedInput(e.target.value); handleRuinSeedChange(e.target.value); }}
+                                  className="w-28 px-3 py-2 border border-gray-300 rounded"
+                                />
+                                <button onClick={rerollRuins} className="flex-1 bg-gray-700 text-white py-2 px-4 rounded hover:bg-gray-800 transition-colors text-sm font-semibold">
+                                  🎲 Re-roll ruins
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">Every number is a different ruin. Note the number to re-create a favorite.</p>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
                   {/* Roof */}
                   <div className="bg-gray-50 p-6 rounded-lg">
                     <h2 className="text-xl font-semibold text-gray-700 mb-4">Roof</h2>
@@ -1181,6 +1833,20 @@
                       </div>
                       <p className="text-xs text-gray-500 mt-1">Gable ends will be on the walls perpendicular to the ridge.</p>
                     </div>
+                    {condition === 'ruined' && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        {ruinPlan && ruinPlan.roofEligible ? (
+                          <label className="flex items-center cursor-pointer">
+                            <input type="checkbox" checked={includeRuinRoof} onChange={e => setIncludeRuinRoof(e.target.checked)} className="mr-3 h-4 w-4" />
+                            <span className="text-sm">Include roof (ruins usually go without)</span>
+                          </label>
+                        ) : (
+                          <p className="text-sm text-gray-600">
+                            No roof on this ruin — both gable walls must be Intact for the roof to have something to rest on.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Floor — ground floor always available; balcony only for 2-story non-HO */}
@@ -1385,7 +2051,7 @@
                   </div>
 
                   <BuildingPreview
-                    wallLayouts={wallLayoutsForPreview}
+                    wallPieces={wallPiecesForPreview}
                     scaled={scaled}
                     stories={stories}
                     ridgeDirection={ridgeDirection}
@@ -1393,20 +2059,14 @@
                     materialThickness={materialThickness}
                     zoomLevel={zoomLevel}
                     includeFloor={includeFloor}
-                    secondFloorMode={secondFloorMode}
                     balconyWidth={balconyWidth}
                     calculateTabCount={calculateTabCount}
-                    generateTabPositions={generateTabPositions}
-                    generateWallPanelPath={generateWallPanelPath}
                     generateFloorPath={generateFloorPath}
                     generateRoofSlopePath={generateRoofSlopePath}
                     generateBalconyRingPaths={generateBalconyRingPaths}
                     pitchRad={pitchRad}
-                    footprintWidthFt={footprintWidthFt}
-                    footprintDepthFt={footprintDepthFt}
-                    scaleRatio={SCALES[scale].ratio}
-                    computeBalconySlots={computeBalconySlots}
-                    computeGableWindow={computeGableWindow}
+                    roofIncluded={roofIncluded}
+                    balconyActive={balconyActive}
                   />
 
                   <div className="text-sm text-gray-600 space-y-1">
@@ -1415,6 +2075,9 @@
                     <p>Gable walls have triangular peaks</p>
                     <p>Roof slopes rest on angled wall tops — lift off for interior access</p>
                     <p>Window/door trim glues to exterior. Door panel floats; add your own hinges.</p>
+                    {condition === 'ruined' && (
+                      <p>Ruined corners still lock together — every standing corner keeps at least one tab, and the glue line runs the full surviving height.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1428,12 +2091,11 @@
         // ====================================================
         const BuildingPreview = (props) => {
           const {
-            wallLayouts, scaled, stories, ridgeDirection, gablePeakCut,
-            materialThickness, zoomLevel, includeFloor, secondFloorMode, balconyWidth,
-            calculateTabCount, generateWallPanelPath, generateFloorPath,
+            wallPieces, scaled, stories, ridgeDirection, gablePeakCut,
+            materialThickness, zoomLevel, includeFloor, balconyWidth,
+            calculateTabCount, generateFloorPath,
             generateRoofSlopePath, generateBalconyRingPaths, pitchRad,
-            footprintWidthFt, footprintDepthFt, scaleRatio,
-            computeBalconySlots, computeGableWindow,
+            roofIncluded, balconyActive,
           } = props;
 
           const ridgeAlongWidth = ridgeDirection === 'width';
@@ -1450,73 +2112,14 @@
           // Does this building have any floor? Governs bottom-edge tabs.
           const hasAnyFloor = includeFloor;
 
-          // Helper: build path for a single wall (all stories stacked).
-          // Gable walls get NOTCHES (body = exterior) so the peak base spans corner-to-corner;
-          // eave walls get TABS (body = interior) that slot into the gable walls.
-          const wallPath = (wk) => {
-            const layout = wallLayouts[wk];
-            const wallLength = layout.wallLength;
-            const isGable = isGableWall(wk);
-            const isWidthWall = (wk === 'front' || wk === 'back');
-            const leftEdge  = isGable ? 'notches' : 'tabs';
-            const rightEdge = isGable ? 'notches' : 'tabs';
-            const bodyLength = isGable ? wallLength : wallLength - 2 * materialThickness;
-            const openingShift = isGable ? 0 : materialThickness;
-            const allOpenings = [];
-            for (const s of layout.perStory) {
-              for (const op of s.layout.openings) {
-                allOpenings.push({
-                  type: op.type,
-                  leftX: op.leftX - openingShift,
-                  bottomY: op.bottomY,
-                  width: op.width,
-                  height: op.height
-                });
-              }
-            }
-            if (stories === 2 && secondFloorMode === 'balcony' && computeBalconySlots) {
-              const slots = computeBalconySlots(wk, wallLength);
-              slots.forEach(s => allOpenings.push({
-                type: 'slot',
-                leftX: s.leftX - openingShift,
-                bottomY: s.bottomY,
-                width: s.width,
-                height: s.height
-              }));
-            }
-            if (isGable && computeGableWindow) {
-              const gw = computeGableWindow(wk, wallLength, bodyLength, scaled.storyHeight);
-              if (gw.fits) {
-                allOpenings.push({
-                  type: 'gable-window',
-                  leftX: gw.opening.leftX - openingShift,
-                  bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
-                  width: gw.opening.width,
-                  height: gw.opening.height
-                });
-              }
-            }
-            const topEdge = isGable ? { type: 'gable', peakHeight: gablePeakCut } : { type: 'flat' };
-            return {
-              path: generateWallPanelPath({
-                wallLength: bodyLength,
-                panelHeight: totalWallH,
-                leftEdge, rightEdge,
-                bottomEdge: hasAnyFloor ? 'tabs' : 'plain',
-                topEdge,
-                openings: allOpenings,
-                bottomDistributeAcross: wallLength,
-              }),
-              bodyLength,
-              bboxLength: wallLength,
-              isWidthWall,
-            };
-          };
-
-          const backWall  = wallPath('back');
-          const frontWall = wallPath('front');
-          const leftWall  = wallPath('left');
-          const rightWall = wallPath('right');
+          // Wall pieces come pre-built from the shared buildWallPieces() (v2.0) —
+          // the exact same paths that go into the downloaded SVG.
+          const byKey = {};
+          for (const p of wallPieces) byKey[p.wallKey] = p;
+          const backWall  = byKey.back;
+          const frontWall = byKey.front;
+          const leftWall  = byKey.left;
+          const rightWall = byKey.right;
 
           // Floor path
           const showFloor = hasAnyFloor;
@@ -1551,9 +2154,11 @@
           const xMax = exteriorD + gap + exteriorW + gap + totalWallH + peakExtraH + vbPad;
           const yMin = -wallFloorGap - totalWallH - peakExtraV - vbPad;
           const yMaxWalls = exteriorD + wallFloorGap + totalWallH + peakExtraV;
-          const showBalconyPiece = stories === 2 && secondFloorMode === 'balcony';
+          const showBalconyPiece = balconyActive;
           const balconyExtraH = showBalconyPiece ? exteriorD + 0.5 : 0;
-          const yMax = yMaxWalls + wallToRoofGap + slopeWidth + roofGap + slopeWidth + balconyExtraH + vbPad;
+          // Roof rows only occupy preview space when the roof is generated (v2.0: ruins usually have none)
+          const roofRowsH = roofIncluded ? wallToRoofGap + slopeWidth + roofGap + slopeWidth : 0.5;
+          const yMax = yMaxWalls + roofRowsH + balconyExtraH + vbPad;
 
           const vbWidth = xMax - xMin;
           const vbHeight = yMax - yMin;
@@ -1589,8 +2194,8 @@
 
                 {/* Back Wall — gap above floor to match the L/R sides */}
                 <g transform={`translate(${exteriorD + gap + backBodyOffsetX}, ${-wallFloorGap - totalWallH})`}>
-                  <path d={backWall.path.outline} className="cut-line" />
-                  {backWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                  <path d={backWall.outline} className="cut-line" />
+                  {backWall.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
                   <text className="label" x={backWall.bodyLength / 2} y={-0.4} textAnchor="middle">Back</text>
                 </g>
 
@@ -1598,8 +2203,8 @@
                 <g transform={`translate(0, 0)`}>
                   {/* Left wall — rotated -90, body offset = 0 (notched) */}
                   <g transform={`translate(${exteriorD}, ${exteriorD / 2}) rotate(-90) translate(${-leftWall.bodyLength / 2}, ${-totalWallH})`}>
-                    <path d={leftWall.path.outline} className="cut-line" />
-                    {leftWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                    <path d={leftWall.outline} className="cut-line" />
+                    {leftWall.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
                     <text className="label" x={leftWall.bodyLength / 2} y={-0.3} textAnchor="middle">Left</text>
                   </g>
 
@@ -1615,33 +2220,37 @@
 
                   {/* Right wall — rotated +90, body offset = 0 (notched) */}
                   <g transform={`translate(${exteriorD + gap + exteriorW + gap + totalWallH}, ${exteriorD / 2}) rotate(90) translate(${-rightWall.bodyLength / 2}, 0)`}>
-                    <path d={rightWall.path.outline} className="cut-line" />
-                    {rightWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                    <path d={rightWall.outline} className="cut-line" />
+                    {rightWall.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
                     <text className="label" x={rightWall.bodyLength / 2} y={-0.3} textAnchor="middle">Right</text>
                   </g>
                 </g>
 
                 {/* Front Wall — rotated 180, with matching gap to floor */}
                 <g transform={`translate(${exteriorD + gap + exteriorW / 2}, ${exteriorD + wallFloorGap + totalWallH}) rotate(180) translate(${-frontWall.bodyLength / 2}, 0)`}>
-                  <path d={frontWall.path.outline} className="cut-line" />
-                  {frontWall.path.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
+                  <path d={frontWall.outline} className="cut-line" />
+                  {frontWall.openingPaths.map((p, i) => <path key={i} d={p} className="opening" />)}
                   <text className="label" x={frontWall.bodyLength / 2} y={-0.3} textAnchor="middle">Front</text>
                 </g>
 
-                {/* Roof slopes below front wall */}
-                <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap})`}>
-                  <path d={roofPath} className="cut-line" />
-                  <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof A</text>
-                </g>
-                <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap + slopeWidth + roofGap})`}>
-                  <path d={roofPath} className="cut-line" />
-                  <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof B</text>
-                </g>
+                {/* Roof slopes below front wall (omitted on most ruins) */}
+                {roofIncluded && (
+                  <>
+                    <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap})`}>
+                      <path d={roofPath} className="cut-line" />
+                      <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof A</text>
+                    </g>
+                    <g transform={`translate(${exteriorD + gap + (exteriorW - ridgeLength) / 2}, ${yMaxWalls + wallToRoofGap + slopeWidth + roofGap})`}>
+                      <path d={roofPath} className="cut-line" />
+                      <text className="label" x={ridgeLength / 2} y={slopeWidth / 2} textAnchor="middle" dominantBaseline="middle" fill="#6b7280">Roof B</text>
+                    </g>
+                  </>
+                )}
 
                 {/* Balcony ring — separate piece below roofs */}
                 {showBalconyPiece && (() => {
                   const bp = generateBalconyRingPaths(exteriorW, exteriorD, balconyWidth, calculateTabCount(exteriorW), calculateTabCount(exteriorD));
-                  const balconyY = yMaxWalls + wallToRoofGap + slopeWidth + roofGap + slopeWidth + 0.5;
+                  const balconyY = yMaxWalls + roofRowsH + 0.5;
                   return (
                     <g transform={`translate(${exteriorD + gap + (exteriorW - exteriorW) / 2}, ${balconyY})`}>
                       <path d={bp.outer} className="cut-line" />
