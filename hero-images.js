@@ -1,7 +1,7 @@
 // Hero slideshow images - add new images here as they are created
 // Simply add a new entry to this array when adding images to the img folder
 const heroImages = [
-    { src: 'img/scale-model-building.png', alt: 'Laser-cut scale-model stone buildings with gable roofs and attic windows' },
+    { src: 'img/scale-model-building-village.png', alt: 'Five laser-cut scale-model buildings at different scales arranged as a village' },
     { src: 'img/wingspan-insert.jpg', alt: 'Wingspan board game insert made with laser cutter' },
     { src: 'img/candle-shades-lit.png', alt: 'Laser cut candle shades with decorative motifs, lit from inside' },
     { src: 'img/card-box.jpg', alt: 'Laser-cut card storage box with dividers' },
