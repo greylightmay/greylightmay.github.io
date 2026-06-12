@@ -177,9 +177,9 @@ const toolsData = [
     id: "scale-model-building",
     name: "Scale Model Building Designer",
     subtitle: "Wargaming terrain and model railroad buildings",
-    description: "Design laser-cut scale-model buildings at 28mm or 32mm wargaming scale, or HO model railroad scale. Configure each wall independently with doors and windows, add a lift-off gabled roof with attic windows, and include a wargaming-friendly balcony floor — all proportioned from real architectural dimensions.",
-    image: "img/scale-model-building.png",
-    imageAlt: "Laser-cut scale-model stone buildings with gable roofs and attic windows",
+    description: "Design laser-cut scale-model buildings at six popular scales: 28mm, 32mm, and 15mm wargaming; OO British railway; HO American railroad; and N scale (which doubles as 10mm wargaming). Configure each wall independently with doors and windows, add a lift-off gabled roof with attic windows, and include a wargaming-friendly balcony floor — all proportioned from real architectural dimensions.",
+    image: "img/scale-model-building-village.png",
+    imageAlt: "Five laser-cut scale-model buildings at different scales arranged as a village",
     link: "scale-model-building-designer.html",
     videoId: "yAXQilTn09A",
     videoTitle: "Scale Model Building Designer",
@@ -193,11 +193,12 @@ const toolsData = [
       buttonGradient: "linear-gradient(135deg, #57534e 0%, #44403c 100%)"
     },
     features: [
-      "Three scales: 28mm/32mm wargaming and HO model railroad",
+      "Six scales: 28mm / 32mm / 15mm wargaming, OO / HO / N railroad",
       "Real-world feet input — real architectural proportions",
       "Per-wall doors, windows, and Victorian gable attic windows",
       "Lift-off gabled roof with overhang and ridge cap",
-      "Optional ground floor + 2-story balcony ring for wargaming"
+      "Optional ground floor + 2-story balcony ring for wargaming",
+      "Material thickness presets for 1/16\", 1/8\", 1/4\" and metric"
     ],
     imageOverlay: "Build scale-model buildings →",
     fallbackEmoji: "🏠"

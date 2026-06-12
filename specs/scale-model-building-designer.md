@@ -30,15 +30,18 @@ Carried forward unchanged from `5-sided-box-designer-v2.html`:
 
 ### 1. Scale Selection
 
-**Scale dropdown** with three presets:
+**Scale dropdown** with six presets:
 
-| Scale | Ratio | Label |
-|---|---|---|
-| `28mm` | 1:56 | 28mm Heroic Wargaming |
-| `32mm` | 1:50 | 32mm Wargaming |
-| `HO` | 1:87 | HO Model Railroad |
+| Scale | Ratio | Label | Display-only? |
+|---|---|---|---|
+| `32mm` | 1:50  | 32mm Wargaming                    | No  |
+| `28mm` | 1:56  | 28mm Heroic Wargaming             | No  |
+| `OO`   | 1:76  | OO British Model Railway          | Yes |
+| `HO`   | 1:87  | HO Model Railroad                 | Yes |
+| `15mm` | 1:100 | 15mm Wargaming                    | No  |
+| `N`    | 1:160 | N Scale / 10mm Wargaming          | Yes |
 
-Default: `28mm`.
+Default: `28mm`. **Display-only** scales (typically trains and very small wargaming) auto-disable the second-story floor and balcony controls — miniatures don't go inside these buildings.
 
 All real-world dimensions below are divided by the scale ratio to produce cut dimensions. Example at 28mm (1:56): 10 ft real → 120 in / 56 = 2.143" cut.
 
@@ -133,23 +136,23 @@ All generated piece dimensions are in **cut inches/mm** (scale-converted).
 - **Full 2nd floor**: same as floor, but sized to interior and receives tabs from the 1st-story wall tops (interior-facing tabs).
 - **Balcony ring**: rectangular frame piece. Outer dimensions = interior footprint (fits inside walls). Inner rectangular hole = outer minus `2 × balcony perimeter width` on each axis. Tabs on all four outer edges engage slots on the interior face of the wall panels.
 
-#### Window Inserts (2-part)
-- **Back pane**: rectangle sized to the wall opening (minus small fit clearance, e.g., 0.01"). Interior detail: cross mullion (simple + shape) cut through.
-- **Front trim**: rectangle larger than opening by `trim margin` on all sides (default: scale-converted from 3" real-world, so trim reads correctly). Interior cutout matches the back pane. Glued to back pane sandwiching the wall.
-- Count: one set per window across all walls.
+#### Window Panes and Trim
+The 4 glass panes are cut **directly into the wall** for each window opening, with the mullion cross remaining as solid wall material. Only the front trim is generated as a separate cut piece — it glues to the wall exterior and finishes the opening with a visible frame lip. At very small scales where the mullion would be below the laser kerf (~0.5mm), the wall cut falls back to a single rectangular opening framed by the trim alone.
+- **Window trim**: rectangle `opening + 2 × trim margin` outer, `opening − 2 × lip` inner. Glued to wall exterior. One per window across all walls.
+- No back pane piece.
 
-#### Door Inserts (front trim + floating panel)
-- **Front trim**: rectangle larger than opening by `trim margin` on all sides. Interior cutout matches door opening + `door clearance`. Glued to wall exterior.
-- **Door panel**: rectangle sized to wall opening minus `2 × door clearance` on each axis. Decorative detail: simple 2-panel pattern cut as shallow engrave or light score lines (v1: two rectangles near top and bottom of the panel, cut lines only). Floats in the trim opening; user adds their own hinges.
-- Count: one set per door across all walls.
+#### Door Pieces (trim + floating panel)
+- **Door trim**: rectangle larger than opening by `door trim margin` on all sides. Interior cutout matches the wall opening. Glued to wall exterior. (Wider margin than window trim — 6" real-world by default — for visual weight.)
+- **Door panel**: rectangle sized to wall opening minus `2 × door clearance` on each axis. Decorative detail: simple 2-panel cut lines. Hinges to the trim; user supplies the actual hinges. Floats in the opening.
+- Count: one trim + one panel per door across all walls.
 
 ### 8. Layout for Laser Bed
 
 Group pieces for efficient cut:
-1. **Row 1**: all wall panels, laid out left-to-right.
-2. **Row 2**: roof panels, floor panels, balcony ring (if applicable).
-3. **Row 3**: all window inserts (back panes + front trims paired).
-4. **Row 4**: all door inserts (front trims + door panels paired).
+1. **Row 1**: all wall panels (including window panes and door openings cut directly).
+2. **Row 2**: roof slopes, ridge cap, floor, balcony ring (if applicable).
+3. **Row 3**: window trim pieces.
+4. **Row 4**: door trim + door panel per door.
 
 Total bed width and height checked against the bed size input (existing feature from base tool). Warn if too large.
 
@@ -171,8 +174,8 @@ New pieces added to the preview (below the 5-sided-box pattern, using the same a
 - **Gable triangles**: shown above the two gable walls in their natural orientation
 - **Roof slopes**: shown as a separate row below the unfolded walls, centered on the same vertical axis
 - **Balcony ring** (if enabled): shown alongside the floor in the middle row
-- **Window inserts** (back pane + front trim pairs): shown in a dedicated row below the roof row
-- **Door inserts** (front trim + door panel pairs): shown in a dedicated row below the window inserts
+- **Window trim** pieces: shown in a dedicated row below the roof row (panes are visible cut into each wall panel; only the trim appears as a separate piece)
+- **Door pieces** (trim + floating panel): shown in a dedicated row below the window trim
 
 For 2-story buildings, the entire layout repeats once per story, stacked vertically with a small gap.
 

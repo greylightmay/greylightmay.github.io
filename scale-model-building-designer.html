@@ -1,7 +1,7 @@
 <!--
   Tool: Scale Model Building Designer
-  Version: v1.0.0
-  Last Updated: April 20, 2026
+  Version: v1.1.0
+  Last Updated: June 10, 2026
   Author: GreyLightMay
   Website: https://greylightmay.com
 
@@ -13,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scale Model Building Designer v1.0.0</title>
+    <title>Scale Model Building Designer v1.1.0</title>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-5FRS651E26"></script>
     <script> window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-5FRS651E26'); </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -30,10 +30,15 @@
         // ============================================================
         // CONSTANTS
         // ============================================================
+        // displayOnly: true => no second-story floor / balcony controls (buildings can't be reached into).
+        // Used for model-railroad scales and very small wargaming where minis don't go inside.
         const SCALES = {
-          '28mm': { ratio: 56, label: '28mm Heroic Wargaming (1:56)' },
-          '32mm': { ratio: 50, label: '32mm Wargaming (1:50)' },
-          'HO':   { ratio: 87, label: 'HO Model Railroad (1:87)' },
+          '32mm':  { ratio: 50,  label: '32mm Wargaming (1:50)',                 displayOnly: false },
+          '28mm':  { ratio: 56,  label: '28mm Heroic Wargaming (1:56)',          displayOnly: false },
+          'OO':    { ratio: 76,  label: 'OO British Model Railway (1:76)',       displayOnly: true  },
+          'HO':    { ratio: 87,  label: 'HO Model Railroad (1:87)',              displayOnly: true  },
+          '15mm':  { ratio: 100, label: '15mm Wargaming (1:100)',                displayOnly: false },
+          'N':     { ratio: 160, label: 'N Scale / 10mm Wargaming (1:160)',      displayOnly: true  },
         };
 
         // Real-world architectural defaults (feet)
@@ -48,7 +53,17 @@
         const DOOR_TRIM_MARGIN_FT = 0.5;     // 6" door casing — wider for visual weight
         const GABLE_WINDOW_FT   = 2;         // 2ft × 2ft Victorian attic window in gable peak
         const ROOF_OVERHANG_FT  = 1;         // 12" overhang past walls on all roof edges
-        const WINDOW_TRIM_LIP   = 0.04;      // Cut inches — small lip (~1mm) for gluing pane behind trim
+        const WINDOW_TRIM_LIP   = 0.04;      // Cut inches — small lip on inner edge of window trim
+        const MIN_TRIM_MARGIN   = 0.04;      // Cut inches — floor for window trim wing (~1mm minimum)
+                                              // so trim stays handleable and visible past the opening
+                                              // at small scales (N gable windows especially).
+        const WINDOW_SILL_REVEAL = 0.02;     // Cut inches — visible ring of wall material inside
+                                              // the trim's inner cutout, before the actual wall hole.
+                                              // Reads as a painted sill/jamb in a contrasting color
+                                              // from the trim. Only applies to the single-cut fallback
+                                              // (small scales like N where mullions can't be cut);
+                                              // the 4-pane case shows the mullion frame itself as
+                                              // the visible "interior" around the panes.
 
         const ROOF_PITCHES = [
           { value: 30, label: '30° (Shallow)' },
@@ -137,15 +152,15 @@
           useEffect(() => {
             if (materialPreset === 'custom') return;
             const presets = units === 'inches'
-              ? { '0.125': 0.125, '0.25': 0.25, '0.118': 0.118, '0.236': 0.236 }
-              : { '3.0': 3.0 / 25.4, '6.0': 6.0 / 25.4, '3.175': 3.175 / 25.4, '6.35': 6.35 / 25.4 };
+              ? { '0.0625': 0.0625, '0.0787': 0.0787, '0.125': 0.125, '0.118': 0.118, '0.25': 0.25, '0.236': 0.236 }
+              : { '1.5875': 1.5875 / 25.4, '2.0': 2.0 / 25.4, '3.0': 3.0 / 25.4, '3.175': 3.175 / 25.4, '6.0': 6.0 / 25.4, '6.35': 6.35 / 25.4 };
             setMaterialThickness(presets[materialPreset] || 0.125);
           }, [materialPreset, units]);
 
-          // HO is a display-only scale — no miniatures going inside, so second-story floor
-          // and balcony ring aren't useful. Auto-reset to 'none' whenever scale becomes HO.
+          // Display-only scales (trains, very small wargaming) don't need a second-story floor or
+          // balcony — no miniatures going inside. Auto-reset to 'none' when scale becomes display-only.
           useEffect(() => {
-            if (scale === 'HO' && secondFloorMode !== 'none') setSecondFloorMode('none');
+            if (SCALES[scale].displayOnly && secondFloorMode !== 'none') setSecondFloorMode('none');
           }, [scale]);
 
           // When ridge direction changes, clear gable-window flags on walls that are no longer gable.
@@ -386,15 +401,54 @@
             }
             outline += ` L 0 0 Z`;
 
-            // --- Add openings as separate sub-paths (same path d, treated as holes via even-odd or separate paths) ---
-            // For simplicity, return outline + opening rectangles as separate <path> strings.
-            // Caller will place them inside the same <g>.
-            const openingPaths = openings.map(op => {
-              // bottomY is measured from panel bottom upward; convert to SVG coords (y=0 at top)
+            // --- Add openings as separate sub-paths ---
+            // Windows are subdivided into 4 separate pane cuts so the mullion cross stays as
+            // solid wall material (the wall "owns" the mullion). If the mullion would be too
+            // thin to cut reliably at the current scale, we fall back to a single rectangular
+            // opening — and we deliberately make that opening SMALLER than the trim's inner
+            // cutout, leaving a visible ring of wall material (the sill/jamb) inside the trim.
+            // That ring gives the trim significant glue overlap AND can be painted in a
+            // contrasting color from the trim for window-frame realism.
+            // Doors and slots are always single rectangles at the full opening size.
+            const MIN_MULLION = 0.020;  // ~0.5mm — typical laser kerf floor
+            const MIN_PANE    = 0.025;  // smallest pane dim that's worth cutting
+
+            const rect = (x, y, w, h) =>
+              `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+
+            const openingPaths = [];
+            for (const op of openings) {
               const top = panelHeight - op.bottomY - op.height;
               const left = op.leftX;
-              return `M ${left} ${top} L ${left + op.width} ${top} L ${left + op.width} ${top + op.height} L ${left} ${top + op.height} Z`;
-            });
+              const isWindow = op.type === 'window' || op.type === 'gable-window';
+              if (isWindow) {
+                const m = Math.min(op.width, op.height) * 0.08;
+                const qw = (op.width  - 3 * m) / 2;
+                const qh = (op.height - 3 * m) / 2;
+                if (m >= MIN_MULLION && qw >= MIN_PANE && qh >= MIN_PANE) {
+                  // 4 separate pane cuts; mullion cross is intact wall material
+                  openingPaths.push(rect(left + m,           top + m,           qw, qh)); // TL
+                  openingPaths.push(rect(left + m + qw + m,  top + m,           qw, qh)); // TR
+                  openingPaths.push(rect(left + m,           top + m + qh + m,  qw, qh)); // BL
+                  openingPaths.push(rect(left + m + qw + m,  top + m + qh + m,  qw, qh)); // BR
+                  continue;
+                }
+                // Fallback: cut a SMALLER rectangle centered in the opening, leaving a
+                // visible wall sill inside the trim's inner cutout.
+                // Trim inner cutout = opening - 2*lip (matching generateWindowTrimPath).
+                // Wall cut = trim inner cutout - 2*sill reveal. Clamped to a minimum so we
+                // never produce a hole smaller than ~1.5mm at extreme scales.
+                const trimInnerW = Math.max(op.width  * 0.6, op.width  - 2 * WINDOW_TRIM_LIP);
+                const trimInnerH = Math.max(op.height * 0.6, op.height - 2 * WINDOW_TRIM_LIP);
+                const cutW = Math.max(0.06, trimInnerW - 2 * WINDOW_SILL_REVEAL);
+                const cutH = Math.max(0.06, trimInnerH - 2 * WINDOW_SILL_REVEAL);
+                const cutLeft = left + (op.width  - cutW) / 2;
+                const cutTop  = top  + (op.height - cutH) / 2;
+                openingPaths.push(rect(cutLeft, cutTop, cutW, cutH));
+                continue;
+              }
+              openingPaths.push(rect(left, top, op.width, op.height));
+            }
 
             return { outline, openingPaths };
           };
@@ -436,77 +490,74 @@
             return path;
           };
 
-          // Balcony ring: outer rectangle with tabs, inner rectangle hole
-          const generateBalconyRingPaths = (outerW, outerD, innerW, innerD, widthTabs, depthTabs) => {
+          // Balcony ring — bounding box equals exterior footprint (bbox-exterior rule).
+          // Body = interior (exterior - 2*material), tabs extend outward by materialThickness
+          // to reach the exterior edges. Tab positions distribute across exterior so they
+          // align with the wall slots (which are placed in exterior coords).
+          //   extW, extD       — exterior footprint dimensions (bbox)
+          //   balconyWidth     — visible ring ledge width inside the body
+          //   widthTabs, depthTabs — number of tabs along each axis
+          const generateBalconyRingPaths = (extW, extD, balconyWidth, widthTabs, depthTabs) => {
             const tabWidth = 0.5;
-            const tabDepth = materialThickness;
+            const T = materialThickness;
+            const bodyW = extW - 2 * T;
+            const bodyD = extD - 2 * T;
+            const innerW = Math.max(0.25, bodyW - 2 * balconyWidth);
+            const innerD = Math.max(0.25, bodyD - 2 * balconyWidth);
 
-            // Outer outline has tabs on all sides
-            const topTabs = generateTabPositions(outerW, widthTabs, tabWidth);
-            const rightTabs = generateTabPositions(outerD, depthTabs, tabWidth);
+            // Tabs distributed across the EXTERIOR dimension (matches wall slot positions)
+            const widthTabPos = generateTabPositions(extW, widthTabs, tabWidth);
+            const depthTabPos = generateTabPositions(extD, depthTabs, tabWidth);
 
-            let outer = `M 0 0`;
-            topTabs.forEach(t => {
-              outer += ` L ${t.start} 0 L ${t.start} ${-tabDepth} L ${t.end} ${-tabDepth} L ${t.end} 0`;
+            const bL = T, bT = T;                  // body top-left corner
+            const bR = T + bodyW, bB = T + bodyD;  // body bottom-right corner
+
+            let outer = `M ${bL} ${bT}`;
+            // Top edge — tabs go UP from body top (y=bT) to exterior top (y=0)
+            widthTabPos.forEach(t => {
+              outer += ` L ${t.start} ${bT} L ${t.start} 0 L ${t.end} 0 L ${t.end} ${bT}`;
             });
-            outer += ` L ${outerW} 0`;
-            rightTabs.forEach(t => {
-              outer += ` L ${outerW} ${t.start} L ${outerW + tabDepth} ${t.start} L ${outerW + tabDepth} ${t.end} L ${outerW} ${t.end}`;
+            outer += ` L ${bR} ${bT}`;
+            // Right edge — tabs go RIGHT from body right (x=bR) to exterior right (x=extW)
+            depthTabPos.forEach(t => {
+              outer += ` L ${bR} ${t.start} L ${extW} ${t.start} L ${extW} ${t.end} L ${bR} ${t.end}`;
             });
-            outer += ` L ${outerW} ${outerD}`;
-            for (let i = topTabs.length - 1; i >= 0; i--) {
-              const t = topTabs[i];
-              outer += ` L ${t.end} ${outerD} L ${t.end} ${outerD + tabDepth} L ${t.start} ${outerD + tabDepth} L ${t.start} ${outerD}`;
+            outer += ` L ${bR} ${bB}`;
+            // Bottom edge — tabs go DOWN from body bottom (y=bB) to exterior bottom (y=extD)
+            for (let i = widthTabPos.length - 1; i >= 0; i--) {
+              const t = widthTabPos[i];
+              outer += ` L ${t.end} ${bB} L ${t.end} ${extD} L ${t.start} ${extD} L ${t.start} ${bB}`;
             }
-            outer += ` L 0 ${outerD}`;
-            for (let i = rightTabs.length - 1; i >= 0; i--) {
-              const t = rightTabs[i];
-              outer += ` L 0 ${t.end} L ${-tabDepth} ${t.end} L ${-tabDepth} ${t.start} L 0 ${t.start}`;
+            outer += ` L ${bL} ${bB}`;
+            // Left edge — tabs go LEFT from body left (x=bL) to exterior left (x=0)
+            for (let i = depthTabPos.length - 1; i >= 0; i--) {
+              const t = depthTabPos[i];
+              outer += ` L ${bL} ${t.end} L 0 ${t.end} L 0 ${t.start} L ${bL} ${t.start}`;
             }
-            outer += ` L 0 0 Z`;
+            outer += ` L ${bL} ${bT} Z`;
 
-            // Inner hole
-            const innerLeft = (outerW - innerW) / 2;
-            const innerTop  = (outerD - innerD) / 2;
+            // Inner hole, centered in the body (which is centered in the bbox)
+            const innerLeft = (extW - innerW) / 2;
+            const innerTop  = (extD - innerD) / 2;
             const inner = `M ${innerLeft} ${innerTop} L ${innerLeft + innerW} ${innerTop} L ${innerLeft + innerW} ${innerTop + innerD} L ${innerLeft} ${innerTop + innerD} Z`;
 
             return { outer, inner };
           };
 
-          // Window insert — back pane with 4 separate rectangular holes (mullions are the solid
-          // material between them). Cuts must not cross, or the piece falls apart.
-          //  - Outer rectangle = piece outline
-          //  - 4 inner rectangles = glass pane cutouts, with a cross of solid material ("mullion")
-          //    between them. Mullion thickness = min(w,h) * 0.08 (frame + cross).
-          const generateWindowBackPanePath = (w, h) => {
-            const paths = [];
-            paths.push(`M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`);
-            const m = Math.min(w, h) * 0.08; // thickness of frame edges and middle cross
-            const qw = (w - 3 * m) / 2;      // each glass pane width
-            const qh = (h - 3 * m) / 2;      // each glass pane height
-            if (qw > 0.02 && qh > 0.02) {
-              const positions = [
-                [m, m],                       // TL
-                [m + qw + m, m],              // TR
-                [m, m + qh + m],              // BL
-                [m + qw + m, m + qh + m],     // BR
-              ];
-              positions.forEach(([x, y]) => {
-                paths.push(`M ${x} ${y} L ${x + qw} ${y} L ${x + qw} ${y + qh} L ${x} ${y + qh} Z`);
-              });
-            }
-            return paths;
-          };
-
-          // Window insert — front trim.
-          // Outer = opening + 2*margin (wider than wall opening, visible as trim face on exterior).
-          // Inner = opening - 2*lipSize (SMALLER than wall opening, so the trim has a visible
-          // inner lip that overlaps the back pane. The back pane (opening-sized) slides through
-          // the wall opening from behind and glues to the back of this lip.)
-          const generateWindowTrimPath = (openW, openH, margin) => {
-            // Small fixed lip (~1 mm cut) — just enough glue area for the pane to adhere to
-            // the back of the trim without swallowing the opening at small scales like HO.
+          // Window trim — front frame applied to the wall exterior.
+          // The 4 window panes are cut directly into the wall (the mullion cross stays as solid
+          // wall material), so no back pane is needed — only this trim glues onto the exterior
+          // face to give the opening a finished frame.
+          //   Outer = opening + 2*margin (wider than wall opening, visible casing on exterior)
+          //   Inner = opening - 2*lipSize (SMALLER than wall opening, so a visible frame lip
+          //   overlaps the opening edge for a finished look).
+          const generateWindowTrimPath = (openW, openH, rawMargin) => {
+            // Small fixed lip (~1 mm cut). Big enough to read as a frame at all scales.
             const lip = WINDOW_TRIM_LIP;
+            // Floor the trim margin so the outer wing past the opening stays visible and
+            // glueable at small scales — especially for gable windows where the architectural
+            // 3" casing scales down to under 0.6mm at N scale.
+            const margin = Math.max(rawMargin, MIN_TRIM_MARGIN);
             const totalW = openW + 2 * margin;
             const totalH = openH + 2 * margin;
             const innerW = Math.max(openW * 0.6, openW - 2 * lip);
@@ -518,7 +569,7 @@
             return { outer, inner, totalW, totalH };
           };
 
-          // Door insert — floating panel (opening minus clearance, with simple 2-panel detail)
+          // Door panel — floating piece (opening minus clearance, with simple 2-panel detail)
           const generateDoorPanelPath = (openW, openH, clearance) => {
             const w = openW - 2 * clearance;
             const h = openH - 2 * clearance;
@@ -532,7 +583,7 @@
             return { paths, w, h };
           };
 
-          // Door insert — front trim.
+          // Door trim — front casing applied to the wall exterior.
           // Outer = opening + 2*margin (visible casing on exterior wall face).
           // Inner = opening (matches wall opening — NO lip). The door panel hinges onto
           // the trim's inner edge, so the trim must clear the full opening for the door to swing.
@@ -693,10 +744,8 @@
             const wallLayouts = buildAllWallLayouts();
             const ratioFt = SCALES[scale].ratio / 12;
 
-            // Each story has 4 wall panels; they lay out in a row.
-            // Row 1-N: wall panels per story (stories side by side to keep vertical compact)
-            // Row for roof + floor/balcony
-            // Row for inserts
+            // Layout: 4 wall panels per row 1, roof+floor+balcony in row 2,
+            // window trims in row 3, door pieces in row 4.
 
             // Compute per-wall panel dims
             // Panel length = wallLength (unchanged)
@@ -738,6 +787,7 @@
               for (const s of perStory) {
                 for (const op of s.layout.openings) {
                   userOpenings.push({
+                    type: op.type, // 'window' | 'door' — preserved so the wall path can subdivide windows into panes
                     leftX: op.leftX - openingShift,
                     bottomY: op.bottomY,
                     width: op.width,
@@ -747,10 +797,9 @@
               }
 
               // Balcony slots (2-story balcony mode): in the 1st-story portion near its top.
-              // computeBalconySlots returns bottomY in 1st-story-panel-local frame, which for
-              // a full-wall panel is the same as full-wall frame (1st-story bottom = y=0).
               const balconySlots = (stories === 2 && secondFloorMode === 'balcony')
                 ? computeBalconySlots(wallKey, wallLength).map(sl => ({
+                    type: 'slot',
                     leftX: sl.leftX - openingShift,
                     bottomY: sl.bottomY,
                     width: sl.width,
@@ -759,11 +808,10 @@
                 : [];
 
               // Gable window (only on gable walls, in the peak area above the top story).
-              // computeGableWindow(panelHeight=storyHeight) returns bottomY = storyHeight + offset.
-              // For a full-wall panel we shift by (stories-1)*storyHeight so it lands in the TOP story.
               const gw = isGable ? computeGableWindow(wallKey, wallLength, bodyLength, scaled.storyHeight) : { fits: false, opening: null };
               const gableWindowOpenings = gw.fits
                 ? [{
+                    type: 'gable-window',
                     leftX: gw.opening.leftX - openingShift,
                     bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
                     width: gw.opening.width,
@@ -822,15 +870,14 @@
             }
             let balconyPaths = null;
             if (stories === 2 && secondFloorMode === 'balcony') {
-              const bw = balconyWidth;
-              const innerW = Math.max(0.25, extW - 2 * bw);
-              const innerD = Math.max(0.25, extD - 2 * bw);
-              balconyPaths = generateBalconyRingPaths(extW, extD, innerW, innerD, calculateTabCount(extW), calculateTabCount(extD));
+              balconyPaths = generateBalconyRingPaths(extW, extD, balconyWidth, calculateTabCount(extW), calculateTabCount(extD));
             }
 
-            // Collect inserts (one per unique opening across all walls)
-            const windowInserts = [];
-            const doorInserts = [];
+            // Collect trim pieces — one per unique opening across all walls.
+            // Window panes are cut directly into the wall (mullion = solid wall material),
+            // so only the front trim is generated as a separate piece.
+            const windowTrims = [];
+            const doorPieces = [];
             for (const wallKey of WALL_KEYS) {
               const { wallLength, perStory } = wallLayouts[wallKey];
               // Top-story bodyLength (needed for gable window fit check)
@@ -838,14 +885,14 @@
               const bodyLenTop = isWidthWall ? wallLength - 2 * materialThickness : wallLength;
               const gwCheck = computeGableWindow(wallKey, wallLength, bodyLenTop, scaled.storyHeight);
               if (gwCheck.fits) {
-                windowInserts.push({ w: gwCheck.opening.width, h: gwCheck.opening.height });
+                windowTrims.push({ w: gwCheck.opening.width, h: gwCheck.opening.height });
               }
               for (const s of perStory) {
                 for (const op of s.layout.openings) {
                   if (op.type === 'window') {
-                    windowInserts.push({ w: op.width, h: op.height });
+                    windowTrims.push({ w: op.width, h: op.height });
                   } else if (op.type === 'door') {
-                    doorInserts.push({ w: op.width, h: op.height });
+                    doorPieces.push({ w: op.width, h: op.height });
                   }
                 }
               }
@@ -854,9 +901,9 @@
             // ===== LAYOUT =====
             // Rows:
             //   1: all wall panels
-            //   2: roof slopes (x2) + floor + secondFloor/balcony
-            //   3: window inserts (pane + trim per window)
-            //   4: door inserts (trim + panel per door)
+            //   2: roof slopes (x2) + ridge cap + floor + balcony (if present)
+            //   3: window trim (one frame per window — panes are cut directly in the walls)
+            //   4: door pieces (trim + floating panel per door)
 
             let currentY = 0;
             let rowMaxH = 0;
@@ -903,41 +950,36 @@
             const row2Width = x - spacing;
             currentY += rowMaxH + spacing;
 
-            // Row 3: window inserts
+            // Row 3: window trim (one per window — panes are cut into the wall)
             let row3 = [];
             x = 0;
             rowMaxH = 0;
-            for (let i = 0; i < windowInserts.length; i++) {
-              const ins = windowInserts[i];
-              const paneW = ins.w;
-              const paneH = ins.h;
-              const panePaths = generateWindowBackPanePath(paneW, paneH);
-              row3.push({ type: 'win-pane', paths: panePaths, w: paneW, h: paneH, x, y: currentY, label: `W${i+1}B` });
-              x += paneW + spacing;
-              const trim = generateWindowTrimPath(paneW, paneH, scaled.trimMargin);
-              row3.push({ type: 'win-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `W${i+1}T` });
+            for (let i = 0; i < windowTrims.length; i++) {
+              const ins = windowTrims[i];
+              const trim = generateWindowTrimPath(ins.w, ins.h, scaled.trimMargin);
+              row3.push({ type: 'win-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `Win ${i+1} trim` });
               x += trim.totalW + spacing;
-              rowMaxH = Math.max(rowMaxH, paneH, trim.totalH);
+              rowMaxH = Math.max(rowMaxH, trim.totalH);
             }
             const row3Width = x - spacing;
-            if (windowInserts.length > 0) currentY += rowMaxH + spacing;
+            if (windowTrims.length > 0) currentY += rowMaxH + spacing;
 
-            // Row 4: door inserts
+            // Row 4: door pieces (trim + floating panel)
             let row4 = [];
             x = 0;
             rowMaxH = 0;
-            for (let i = 0; i < doorInserts.length; i++) {
-              const ins = doorInserts[i];
+            for (let i = 0; i < doorPieces.length; i++) {
+              const ins = doorPieces[i];
               const trim = generateDoorTrimPath(ins.w, ins.h, scaled.doorTrimMargin, doorClearance);
-              row4.push({ type: 'door-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `D${i+1}T` });
+              row4.push({ type: 'door-trim', outer: trim.outer, inner: trim.inner, w: trim.totalW, h: trim.totalH, x, y: currentY, label: `Door ${i+1} trim` });
               x += trim.totalW + spacing;
               const panel = generateDoorPanelPath(ins.w, ins.h, doorClearance);
-              row4.push({ type: 'door-panel', paths: panel.paths, w: panel.w, h: panel.h, x, y: currentY, label: `D${i+1}P` });
+              row4.push({ type: 'door-panel', paths: panel.paths, w: panel.w, h: panel.h, x, y: currentY, label: `Door ${i+1} panel` });
               x += panel.w + spacing;
               rowMaxH = Math.max(rowMaxH, trim.totalH, panel.h);
             }
             const row4Width = x - spacing;
-            if (doorInserts.length > 0) currentY += rowMaxH + spacing;
+            if (doorPieces.length > 0) currentY += rowMaxH + spacing;
 
             const totalWidth  = Math.max(row1Width, row2Width, row3Width, row4Width, 1);
             const totalHeight = currentY;
@@ -945,7 +987,7 @@
             const svgH = convertFromInches(totalHeight);
 
             let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-            svg += `<!-- Generated by Scale Model Building Designer v1.0.0 - https://greylightmay.com -->\n`;
+            svg += `<!-- Generated by Scale Model Building Designer v1.1.0 - https://greylightmay.com -->\n`;
             svg += `<!-- Scale: ${SCALES[scale].label} | Footprint: ${footprintWidthFt}x${footprintDepthFt} ft | Stories: ${stories} -->\n`;
             svg += `<svg width="${svgW}${units === 'mm' ? 'mm' : 'in'}" height="${svgH}${units === 'mm' ? 'mm' : 'in'}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
             svg += `  <defs><style>.cut-line { stroke: rgb(255,0,0); stroke-width: 0.01; fill: none; }</style></defs>\n`;
@@ -970,18 +1012,14 @@
                 svg += `  <g transform="translate(${r.x}, ${r.y})"><path d="${r.path}" class="cut-line" /></g>\n`;
               }
             }
-            // Row 3 (window inserts)
+            // Row 3 (window trim)
             for (const r of row3) {
               svg += `  <g transform="translate(${r.x}, ${r.y})">\n`;
-              if (r.type === 'win-pane') {
-                for (const pp of r.paths) svg += `    <path d="${pp}" class="cut-line" />\n`;
-              } else {
-                svg += `    <path d="${r.outer}" class="cut-line" />\n`;
-                svg += `    <path d="${r.inner}" class="cut-line" />\n`;
-              }
+              svg += `    <path d="${r.outer}" class="cut-line" />\n`;
+              svg += `    <path d="${r.inner}" class="cut-line" />\n`;
               svg += `  </g>\n`;
             }
-            // Row 4 (door inserts)
+            // Row 4 (door pieces)
             for (const r of row4) {
               svg += `  <g transform="translate(${r.x}, ${r.y})">\n`;
               if (r.type === 'door-panel') {
@@ -1080,7 +1118,7 @@
             <div className="max-w-7xl mx-auto p-6 bg-white">
               <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Scale Model Building Designer</h1>
               <p className="text-center text-gray-600 mb-1">Wargaming terrain and model railroad buildings with lift-off gable roofs</p>
-              <p className="text-center text-gray-500 text-sm mb-8">v1.0.0</p>
+              <p className="text-center text-gray-500 text-sm mb-8">v1.1.0</p>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Settings Column */}
@@ -1153,9 +1191,9 @@
                       <span>Include ground floor panel</span>
                     </label>
                     {stories === 2 && (
-                      scale === 'HO' ? (
+                      SCALES[scale].displayOnly ? (
                         <p className="text-sm text-gray-600 mt-2 pt-3 border-t border-gray-200">
-                          Second-story floors aren't generated at HO scale — HO buildings are display-only and don't need interior access.
+                          Second-story floors aren't generated at this scale — the building is display-only and doesn't need interior access.
                         </p>
                       ) : (
                         <div className="mt-2 pt-3 border-t border-gray-200">
@@ -1258,6 +1296,8 @@
                     <select value={materialPreset} onChange={e => { setMaterialPreset(e.target.value); if (e.target.value !== 'custom') setCustomThickness(''); }} className="w-full px-3 py-2 border border-gray-300 rounded">
                       {units === 'inches' ? (
                         <>
+                          <option value="0.0625">1/16" (0.0625")</option>
+                          <option value="0.0787">Nominal 1/16" / 2mm (0.0787")</option>
                           <option value="0.125">1/8" (0.125")</option>
                           <option value="0.118">Nominal 1/8" (0.118")</option>
                           <option value="0.25">1/4" (0.250")</option>
@@ -1265,6 +1305,8 @@
                         </>
                       ) : (
                         <>
+                          <option value="1.5875">1.5875mm (1/16")</option>
+                          <option value="2.0">2.0mm</option>
                           <option value="3.0">3.0mm</option>
                           <option value="3.175">3.175mm (1/8")</option>
                           <option value="6.0">6.0mm</option>
@@ -1424,6 +1466,7 @@
             for (const s of layout.perStory) {
               for (const op of s.layout.openings) {
                 allOpenings.push({
+                  type: op.type,
                   leftX: op.leftX - openingShift,
                   bottomY: op.bottomY,
                   width: op.width,
@@ -1431,25 +1474,21 @@
                 });
               }
             }
-            // Balcony slots live in the 1st-story panel near its top. In the preview's
-            // full-wall frame, the 1st-story panel bottom is at y=0 so bottomY passes through.
             if (stories === 2 && secondFloorMode === 'balcony' && computeBalconySlots) {
               const slots = computeBalconySlots(wk, wallLength);
               slots.forEach(s => allOpenings.push({
+                type: 'slot',
                 leftX: s.leftX - openingShift,
                 bottomY: s.bottomY,
                 width: s.width,
                 height: s.height
               }));
             }
-            // Gable window — only on gable walls (top story)
-            // computeGableWindow returns bottomY in a single-story panel frame
-            // (bottomY = panelHeight + offsetAbovePanelTop). For the preview's full-wall frame
-            // we add (stories-1)*storyHeight so it lands in the top story's peak area.
             if (isGable && computeGableWindow) {
               const gw = computeGableWindow(wk, wallLength, bodyLength, scaled.storyHeight);
               if (gw.fits) {
                 allOpenings.push({
+                  type: 'gable-window',
                   leftX: gw.opening.leftX - openingShift,
                   bottomY: gw.opening.bottomY + (stories - 1) * scaled.storyHeight,
                   width: gw.opening.width,
@@ -1601,9 +1640,7 @@
 
                 {/* Balcony ring — separate piece below roofs */}
                 {showBalconyPiece && (() => {
-                  const innerW = Math.max(0.25, exteriorW - 2 * balconyWidth);
-                  const innerD = Math.max(0.25, exteriorD - 2 * balconyWidth);
-                  const bp = generateBalconyRingPaths(exteriorW, exteriorD, innerW, innerD, calculateTabCount(exteriorW), calculateTabCount(exteriorD));
+                  const bp = generateBalconyRingPaths(exteriorW, exteriorD, balconyWidth, calculateTabCount(exteriorW), calculateTabCount(exteriorD));
                   const balconyY = yMaxWalls + wallToRoofGap + slopeWidth + roofGap + slopeWidth + 0.5;
                   return (
                     <g transform={`translate(${exteriorD + gap + (exteriorW - exteriorW) / 2}, ${balconyY})`}>
