@@ -403,15 +403,19 @@
             // Top edge (front of shelf) - PLAIN
             path += ` L ${width} 0`;
 
-            // Right edge with notches for right side panel
+            // Right edge with notches for right side panel.
+            // Notches sit at the SAME positions as the side panel's top/bottom
+            // tabs (generateTabPositions over the side-wall width). No offset:
+            // the side-wall tabs span the full depth from the front edge, so the
+            // notches must too. (The +materialThickness offset used by the back
+            // panel does NOT apply here — that compensates for the side body
+            // being inset by mt, which is not the case along this edge.)
             const rightNotches = generateTabPositions(sideWallWidth, depthNotchCount);
             rightNotches.forEach(notch => {
-              const offsetStart = notch.start + materialThickness;
-              const offsetEnd = notch.end + materialThickness;
-              path += ` L ${width} ${offsetStart}`;
-              path += ` L ${width - tabDepth} ${offsetStart}`;
-              path += ` L ${width - tabDepth} ${offsetEnd}`;
-              path += ` L ${width} ${offsetEnd}`;
+              path += ` L ${width} ${notch.start}`;
+              path += ` L ${width - tabDepth} ${notch.start}`;
+              path += ` L ${width - tabDepth} ${notch.end}`;
+              path += ` L ${width} ${notch.end}`;
             });
             path += ` L ${width} ${depth}`;
 
@@ -427,16 +431,15 @@
             }
             path += ` L 0 ${depth}`;
 
-            // Left edge with notches for left side panel
+            // Left edge with notches for left side panel (mirror of the right
+            // edge; same positions as the side-wall tabs, no offset).
             const leftNotches = generateTabPositions(sideWallWidth, depthNotchCount);
             for (let i = leftNotches.length - 1; i >= 0; i--) {
               const notch = leftNotches[i];
-              const offsetStart = notch.start + materialThickness;
-              const offsetEnd = notch.end + materialThickness;
-              path += ` L 0 ${offsetEnd}`;
-              path += ` L ${tabDepth} ${offsetEnd}`;
-              path += ` L ${tabDepth} ${offsetStart}`;
-              path += ` L 0 ${offsetStart}`;
+              path += ` L 0 ${notch.end}`;
+              path += ` L ${tabDepth} ${notch.end}`;
+              path += ` L ${tabDepth} ${notch.start}`;
+              path += ` L 0 ${notch.start}`;
             }
             path += ` L 0 0 Z`;
 
